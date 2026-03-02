@@ -1,0 +1,51 @@
+### Health Check
+
+GET http://localhost:8088/api/v3/health HTTP/1.1
+
+
+### Get All Bingo
+
+GET http://localhost:8088/api/v3/bingo HTTP/1.1
+
+
+### Create Bingo
+
+POST http://localhost:8088/api/v3/bingo HTTP/1.1
+Content-Type: application/json
+
+{
+  "cells": {
+    "cell1": null,
+    "cell10": null,
+    "cell11": null,
+    "cell12": null,
+    "cell13": null,
+    "cell14": null,
+    "cell15": null,
+    "cell16": null,
+    "cell17": null,
+    "cell18": null,
+    "cell19": null,
+    "cell2": "ok",
+    "cell20": null,
+    "cell21": null,
+    "cell22": null,
+    "cell23": null,
+    "cell24": null,
+    "cell25": null,
+    "cell3": null,
+    "cell4": null,
+    "cell5": null,
+    "cell6": null,
+    "cell7": "nice",
+    "cell8": null,
+    "cell9": null
+  },
+  "description": "Another bingo card",
+  "title": "Sample Bingo 2"
+}
+
+
+### Get Image
+
+GET http://localhost:8088/api/v3/images HTTP/1.1

@@ -5,10 +5,11 @@ import (
 	"net/http"
 	"time"
 
-	handler "github.com/CodeAfu/go-ducc-api/internals"
-	"github.com/CodeAfu/go-ducc-api/internals/bingo"
+	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
+	"github.com/CodeAfu/go-ducc-api/internal/bingo"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5"
 )
 
 // mount
@@ -24,12 +25,15 @@ func (app *application) mount() http.Handler {
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	// Routes
-	r.Get("/", handler.HealthCheck)
+	r.Get("/api/v3/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!"))
+	})
 
 	// Bingo
-	bingoService := bingo.NewService()
+	bingoService := bingo.NewService(repo.New(app.db))
 	bingoHandler := bingo.NewHandler(bingoService)
-	r.Get("/api/bingo", bingoHandler.GetBingo)
+	r.Get("/api/v3/bingo", bingoHandler.GetBingo)
+	r.Post("/api/v3/bingo", bingoHandler.CreateBingo)
 
 	return r
 }
@@ -52,8 +56,8 @@ func (app *application) run(h http.Handler) error {
 
 type application struct {
 	config config
+	db     *pgx.Conn
 	// logger
-	// db driver
 }
 
 type dbConfig struct {
