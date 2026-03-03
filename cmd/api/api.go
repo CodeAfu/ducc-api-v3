@@ -11,7 +11,7 @@ import (
 	clerkhttp "github.com/clerk/clerk-sdk-go/v2/http"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // mount
@@ -73,7 +73,7 @@ func (app *application) run(h http.Handler) error {
 
 type application struct {
 	config config
-	db     *pgx.Conn
+	db     *pgxpool.Pool
 	// logger
 }
 

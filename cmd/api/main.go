@@ -4,10 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/CodeAfu/go-ducc-api/internal/env"
 	"github.com/clerk/clerk-sdk-go/v2"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
 
@@ -40,12 +41,20 @@ func main() {
 		},
 	}
 
-	conn, err := pgx.Connect(ctx, cfg.db.dsn)
+	poolConfig, err := pgxpool.ParseConfig(cfg.db.dsn)
+	if err != nil {
+		slog.Error("failed to parse db config", "err", err)
+		os.Exit(1)
+	}
+	poolConfig.MaxConnLifetime = 30 * time.Minute
+	poolConfig.HealthCheckPeriod = 30 * time.Second
+
+	conn, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		slog.Error("failed to connect to database", "err", err)
 		os.Exit(1)
 	}
-	defer conn.Close(ctx)
+	defer conn.Close() // note: no ctx argument for pool
 
 	logger.Info("connected to database")
 

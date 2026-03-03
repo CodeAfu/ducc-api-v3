@@ -14,14 +14,14 @@ type ImageService interface {
 	DeleteImage(ctx context.Context, id int64) error
 }
 
+type svc struct {
+	repo repo.Querier
+}
+
 func NewService(repo repo.Querier) ImageService {
 	return &svc{
 		repo: repo,
 	}
-}
-
-type svc struct {
-	repo repo.Querier
 }
 
 func (s *svc) GetImages(ctx context.Context) ([]repo.Image, error) {
