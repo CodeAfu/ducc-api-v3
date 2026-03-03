@@ -7,6 +7,8 @@ import (
 
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
 	"github.com/CodeAfu/go-ducc-api/internal/bingo"
+	"github.com/CodeAfu/go-ducc-api/internal/image"
+	clerkhttp "github.com/clerk/clerk-sdk-go/v2/http"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5"
@@ -33,7 +35,22 @@ func (app *application) mount() http.Handler {
 	bingoService := bingo.NewService(repo.New(app.db))
 	bingoHandler := bingo.NewHandler(bingoService)
 	r.Get("/api/v3/bingo", bingoHandler.GetBingo)
-	r.Post("/api/v3/bingo", bingoHandler.CreateBingo)
+	r.Get("/api/v3/bingo/{id}", bingoHandler.GetBingoById)
+	r.Group(func(r chi.Router) {
+		r.Use(clerkhttp.WithHeaderAuthorization())
+		r.Post("/api/v3/bingo", bingoHandler.CreateBingo)
+	})
+
+	// Image
+	imageService := image.NewService(repo.New(app.db))
+	imageHandler := image.NewHandler(imageService)
+	r.Get("/api/v3/images", imageHandler.GetImages)
+	r.Get("/api/v3/images/{id}", imageHandler.GetImageById)
+	r.Group(func(r chi.Router) {
+		r.Use(clerkhttp.WithHeaderAuthorization())
+		r.Post("/api/v3/images", imageHandler.CreateImage)
+		r.Delete("/api/v3/images/{id}", imageHandler.DeleteImage)
+	})
 
 	return r
 }
@@ -65,6 +82,11 @@ type dbConfig struct {
 }
 
 type config struct {
-	addr string
-	db   dbConfig
+	addr  string
+	db    dbConfig
+	clerk clerkConfig
+}
+
+type clerkConfig struct {
+	key string
 }

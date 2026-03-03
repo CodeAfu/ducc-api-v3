@@ -8,6 +8,11 @@ GET http://localhost:8088/api/v3/health HTTP/1.1
 GET http://localhost:8088/api/v3/bingo HTTP/1.1
 
 
+### Get Bingo By ID
+
+GET http://localhost:8088/api/v3/bingo/1 HTTP/1.1
+
+
 ### Create Bingo
 
 POST http://localhost:8088/api/v3/bingo HTTP/1.1
@@ -46,6 +51,11 @@ Content-Type: application/json
 }
 
 
-### Get Image
+### Get All Images
 
 GET http://localhost:8088/api/v3/images HTTP/1.1
+
+
+### Get Image
+
+GET http://localhost:8088/api/v3/images/1 HTTP/1.1

@@ -4,10 +4,17 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"net/http"
+	"strings"
 )
 
-func GenerateImageHash(base64Str string) string {
-	hash := sha256.Sum256([]byte(base64Str))
+func CheckValidImage(data []byte) bool {
+	mime := http.DetectContentType(data)
+	return strings.HasPrefix(mime, "image/")
+}
+
+func GenerateImageHash(data []byte) string {
+	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])
 }
 

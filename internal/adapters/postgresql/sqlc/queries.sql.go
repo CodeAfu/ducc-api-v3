@@ -7,8 +7,8 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 
-	json "encoding/json"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -40,16 +40,17 @@ func (q *Queries) CreateBingo(ctx context.Context, arg CreateBingoParams) (Bingo
 }
 
 const createImage = `-- name: CreateImage :one
-INSERT INTO images (img_data, img_hash) VALUES ($1, $2) RETURNING id, img_data, img_hash, created_at, updated_at
+INSERT INTO images (img_data, img_hash, added_by) VALUES ($1, $2, $3) RETURNING id, img_data, img_hash, created_at, updated_at, added_by
 `
 
 type CreateImageParams struct {
-	ImgData []byte `json:"img_data"`
-	ImgHash string `json:"img_hash"`
+	ImgData []byte      `json:"img_data"`
+	ImgHash string      `json:"img_hash"`
+	AddedBy pgtype.Text `json:"added_by"`
 }
 
 func (q *Queries) CreateImage(ctx context.Context, arg CreateImageParams) (Image, error) {
-	row := q.db.QueryRow(ctx, createImage, arg.ImgData, arg.ImgHash)
+	row := q.db.QueryRow(ctx, createImage, arg.ImgData, arg.ImgHash, arg.AddedBy)
 	var i Image
 	err := row.Scan(
 		&i.ID,
@@ -57,6 +58,7 @@ func (q *Queries) CreateImage(ctx context.Context, arg CreateImageParams) (Image
 		&i.ImgHash,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AddedBy,
 	)
 	return i, err
 }
@@ -134,15 +136,46 @@ func (q *Queries) GetBingoById(ctx context.Context, id int64) (Bingo, error) {
 	return i, err
 }
 
-const getImage = `-- name: GetImage :one
+const getImageById = `-- name: GetImageById :one
 SELECT img_data FROM images WHERE id = $1
 `
 
-func (q *Queries) GetImage(ctx context.Context, id int64) ([]byte, error) {
-	row := q.db.QueryRow(ctx, getImage, id)
+func (q *Queries) GetImageById(ctx context.Context, id int64) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getImageById, id)
 	var img_data []byte
 	err := row.Scan(&img_data)
 	return img_data, err
+}
+
+const getImages = `-- name: GetImages :many
+SELECT id, img_data, img_hash, created_at, updated_at, added_by FROM images
+`
+
+func (q *Queries) GetImages(ctx context.Context) ([]Image, error) {
+	rows, err := q.db.Query(ctx, getImages)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Image
+	for rows.Next() {
+		var i Image
+		if err := rows.Scan(
+			&i.ID,
+			&i.ImgData,
+			&i.ImgHash,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AddedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateBingo = `-- name: UpdateBingo :one

@@ -8,6 +8,7 @@ import (
 
 type BingoService interface {
 	GetBingo(ctx context.Context) ([]repo.Bingo, error)
+	GetBingoById(ctx context.Context, id int64) (repo.Bingo, error)
 	CreateBingo(ctx context.Context, arg repo.CreateBingoParams) (repo.Bingo, error)
 }
 
@@ -23,6 +24,10 @@ func NewService(repo repo.Querier) BingoService {
 
 func (s *svc) GetBingo(ctx context.Context) ([]repo.Bingo, error) {
 	return s.repo.GetBingo(ctx)
+}
+
+func (s *svc) GetBingoById(ctx context.Context, id int64) (repo.Bingo, error) {
+	return s.repo.GetBingoById(ctx, id)
 }
 
 func (s *svc) CreateBingo(ctx context.Context, arg repo.CreateBingoParams) (repo.Bingo, error) {

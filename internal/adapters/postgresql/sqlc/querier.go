@@ -15,7 +15,8 @@ type Querier interface {
 	DeleteImage(ctx context.Context, id int64) error
 	GetBingo(ctx context.Context) ([]Bingo, error)
 	GetBingoById(ctx context.Context, id int64) (Bingo, error)
-	GetImage(ctx context.Context, id int64) ([]byte, error)
+	GetImageById(ctx context.Context, id int64) ([]byte, error)
+	GetImages(ctx context.Context) ([]Image, error)
 	UpdateBingo(ctx context.Context, arg UpdateBingoParams) (Bingo, error)
 }
 

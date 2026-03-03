@@ -5,7 +5,8 @@
 package repo
 
 import (
-	json "encoding/json"
+	"encoding/json"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -27,4 +28,5 @@ type Image struct {
 	ImgHash   string             `json:"img_hash"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	AddedBy   pgtype.Text        `json:"added_by"`
 }

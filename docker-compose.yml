@@ -1,8 +1,10 @@
 services:
   ducc-api:
-    image: ducc-api
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: ducc-api-v3
+    env_file: .env
+    restart: unless-stopped
     ports:
       - "8088:8088"
