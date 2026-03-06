@@ -1,7 +1,7 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    queries: "./internal/adapters/postgresql/sqlc/queries.sql"
+    queries: "./internal/adapters/postgresql/sqlc/queries"
     schema: "./internal/adapters/postgresql/migrations"
     gen:
       go:

@@ -20,6 +20,39 @@ type Bingo struct {
 	ImgCenter      pgtype.Int8        `json:"img_center"`
 	ImgBg          pgtype.Int8        `json:"img_bg"`
 	CardImgPreview []byte             `json:"card_img_preview"`
+	CreatedByEmail pgtype.Text        `json:"created_by_email"`
+}
+
+type HylComment struct {
+	ID              int64              `json:"id"`
+	SessionID       int64              `json:"session_id"`
+	PostID          int64              `json:"post_id"`
+	ParentCommentID pgtype.Int8        `json:"parent_comment_id"`
+	Url             string             `json:"url"`
+	Author          string             `json:"author"`
+	Content         string             `json:"content"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type HylPost struct {
+	ID        int64              `json:"id"`
+	SessionID int64              `json:"session_id"`
+	Url       string             `json:"url"`
+	Author    string             `json:"author"`
+	Title     string             `json:"title"`
+	Content   string             `json:"content"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type HylScrapeSession struct {
+	ID             int64              `json:"id"`
+	Target         string             `json:"target"`
+	CreatedByEmail string             `json:"created_by_email"`
+	Description    pgtype.Text        `json:"description"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Image struct {

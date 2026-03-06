@@ -6,15 +6,27 @@ package repo
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
+	AddHylComment(ctx context.Context, arg AddHylCommentParams) (HylComment, error)
+	AddHylPost(ctx context.Context, arg AddHylPostParams) (HylPost, error)
 	CreateBingo(ctx context.Context, arg CreateBingoParams) (Bingo, error)
+	CreateHylScrapeSession(ctx context.Context, arg CreateHylScrapeSessionParams) (HylScrapeSession, error)
 	CreateImage(ctx context.Context, arg CreateImageParams) (Image, error)
 	DeleteBingo(ctx context.Context, id int64) error
 	DeleteImage(ctx context.Context, id int64) error
 	GetBingo(ctx context.Context) ([]Bingo, error)
+	GetBingoByEmail(ctx context.Context, createdByEmail pgtype.Text) ([]Bingo, error)
 	GetBingoById(ctx context.Context, id int64) (Bingo, error)
+	GetHylCommentByAuthor(ctx context.Context, author string) ([]HylComment, error)
+	GetHylCommentsAndPostsFromAuthor(ctx context.Context, author string) ([]HylPost, error)
+	GetHylPostByAuthor(ctx context.Context, author string) ([]HylPost, error)
+	GetHylPostsBySession(ctx context.Context, sessionID int64) ([]HylPost, error)
+	GetHylScrapeSessionByEmail(ctx context.Context, createdByEmail string) ([]HylScrapeSession, error)
+	GetHylScrapeSessionById(ctx context.Context, id int64) (HylScrapeSession, error)
 	GetImageById(ctx context.Context, id int64) ([]byte, error)
 	GetImages(ctx context.Context) ([]Image, error)
 	UpdateBingo(ctx context.Context, arg UpdateBingoParams) (Bingo, error)

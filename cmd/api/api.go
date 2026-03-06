@@ -1,16 +1,19 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
 	"github.com/CodeAfu/go-ducc-api/internal/bingo"
+	"github.com/CodeAfu/go-ducc-api/internal/hylscraper"
 	"github.com/CodeAfu/go-ducc-api/internal/image"
 	clerkhttp "github.com/clerk/clerk-sdk-go/v2/http"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+	"github.com/go-chi/httprate"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -19,12 +22,19 @@ import (
 func (app *application) mount() http.Handler {
 	r := chi.NewRouter()
 
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   app.config.corsOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowCredentials: true,
+	}))
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.StripSlashes)
 	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(httprate.LimitByIP(60, 1*time.Minute))
 
 	// Routes
 	r.Get("/api/v3/health", func(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +62,11 @@ func (app *application) mount() http.Handler {
 		r.Delete("/api/v3/images/{id}", imageHandler.DeleteImage)
 	})
 
+	// HoyoLab Scraper
+	hylscraperService := hylscraper.NewService(repo.New(app.db), app.db)
+	hylscraperHandler := hylscraper.NewHandler(hylscraperService)
+	r.Get("/api/v3/hylscraper", hylscraperHandler.Scrape)
+
 	return r
 }
 
@@ -66,7 +81,7 @@ func (app *application) run(h http.Handler) error {
 
 	srv.SetKeepAlivesEnabled(true)
 
-	log.Printf("server started at %s\n", app.config.addr)
+	slog.Info("server started", "addr", app.config.addr)
 
 	return srv.ListenAndServe()
 }
@@ -74,7 +89,6 @@ func (app *application) run(h http.Handler) error {
 type application struct {
 	config config
 	db     *pgxpool.Pool
-	// logger
 }
 
 type dbConfig struct {
@@ -82,9 +96,10 @@ type dbConfig struct {
 }
 
 type config struct {
-	addr  string
-	db    dbConfig
-	clerk clerkConfig
+	addr        string
+	db          dbConfig
+	clerk       clerkConfig
+	corsOrigins []string
 }
 
 type clerkConfig struct {

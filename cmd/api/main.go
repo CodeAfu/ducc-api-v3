@@ -10,12 +10,16 @@ import (
 	"github.com/clerk/clerk-sdk-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/lmittmann/tint"
 )
 
 func main() {
 	_ = godotenv.Load()
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{
+		Level: slog.LevelDebug,
+	}))
 	slog.SetDefault(logger)
 
 	dsn, err := env.GetString("GOOSE_DBSTRING")
@@ -31,6 +35,12 @@ func main() {
 	}
 	clerk.SetKey(clerkKey)
 
+	corsOrigins, err := env.GetString("CORS_ORIGINS")
+	if err != nil {
+		slog.Error("failed to get CORS_ORIGINS", "err", err)
+		os.Exit(1)
+	}
+
 	cfg := config{
 		addr: ":8088",
 		db: dbConfig{
@@ -39,6 +49,7 @@ func main() {
 		clerk: clerkConfig{
 			key: clerkKey,
 		},
+		corsOrigins, corsOrigins,
 	}
 
 	poolConfig, err := pgxpool.ParseConfig(cfg.db.dsn)
@@ -58,14 +69,14 @@ func main() {
 
 	logger.Info("connected to database")
 
-	api := application{
+	app := application{
 		config: cfg,
 		db:     conn,
 	}
 
-	h := api.mount()
+	h := app.mount()
 
-	if err := api.run(h); err != nil {
+	if err := app.run(h); err != nil {
 		slog.Error("server has failed to start", "err", err)
 		os.Exit(1)
 	}
