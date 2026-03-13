@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -24,64 +25,27 @@ import (
 // @name Authorization
 func main() {
 	_ = godotenv.Load()
-	ctx := context.Background()
 
 	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{
 		Level: slog.LevelDebug,
 	}))
 	slog.SetDefault(logger)
 
-	dsn, err := env.GetString("GOOSE_DBSTRING")
+	cfg, err := loadConfig()
 	if err != nil {
-		slog.Error("failed to get GOOSE_DBSTRING", "err", err)
+		slog.Error("failed to load config", "err", err)
 		os.Exit(1)
 	}
 
-	internalToken, err := env.GetString("INTERNAL_TOKEN")
-	if err != nil {
-		slog.Error("failed to get INTERNAL_TOKEN", "err", err)
-		os.Exit(1)
-	}
+	clerk.SetKey(cfg.clerk.key)
 
-	clerkKey, err := env.GetString("CLERK_SECRET_KEY")
-	if err != nil {
-		slog.Error("failed to get CLERK_SECRET_KEY", "err", err)
-		os.Exit(1)
-	}
-	clerk.SetKey(clerkKey)
-
-	corsOrigins, err := env.GetString("CORS_ORIGINS")
-	if err != nil {
-		slog.Error("failed to get CORS_ORIGINS", "err", err)
-		os.Exit(1)
-	}
-
-	cfg := config{
-		addr: ":8088",
-		db: dbConfig{
-			dsn: dsn,
-		},
-		clerk: clerkConfig{
-			key: clerkKey,
-		},
-		corsOrigins:   strings.Split(corsOrigins, ","),
-		internalToken: internalToken,
-	}
-
-	poolConfig, err := pgxpool.ParseConfig(cfg.db.dsn)
-	if err != nil {
-		slog.Error("failed to parse db config", "err", err)
-		os.Exit(1)
-	}
-	poolConfig.MaxConnLifetime = 30 * time.Minute
-	poolConfig.HealthCheckPeriod = 30 * time.Second
-
-	conn, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	ctx := context.Background()
+	conn, err := newDBPool(ctx, cfg.db.dsn)
 	if err != nil {
 		slog.Error("failed to connect to database", "err", err)
 		os.Exit(1)
 	}
-	defer conn.Close() // note: no ctx argument for pool
+	defer conn.Close()
 
 	logger.Info("connected to database")
 
@@ -96,4 +60,50 @@ func main() {
 		slog.Error("server has failed to start", "err", err)
 		os.Exit(1)
 	}
+}
+
+func newDBPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
+	poolConfig, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	poolConfig.MaxConnLifetime = 30 * time.Minute
+	poolConfig.HealthCheckPeriod = 30 * time.Second
+	return pgxpool.NewWithConfig(ctx, poolConfig)
+}
+
+func loadConfig() (config, error) {
+	internalToken, err := env.GetString("INTERNAL_TOKEN")
+	if err != nil {
+		return config{}, fmt.Errorf("INTERNAL_TOKEN: %w", err)
+	}
+
+	envVar, err := env.GetString("ENV")
+	if err != nil {
+		return config{}, fmt.Errorf("ENV: %w", err)
+	}
+
+	dsn, err := env.GetString("GOOSE_DBSTRING")
+	if err != nil {
+		return config{}, fmt.Errorf("GOOSE_DBSTRING: %w", err)
+	}
+
+	clerkKey, err := env.GetString("CLERK_SECRET_KEY")
+	if err != nil {
+		return config{}, fmt.Errorf("CLERK_SECRET_KEY: %w", err)
+	}
+
+	corsOrigins, err := env.GetString("CORS_ORIGINS")
+	if err != nil {
+		return config{}, fmt.Errorf("CORS_ORIGINS: %w", err)
+	}
+
+	return config{
+		env:           envVar,
+		addr:          ":8088",
+		internalToken: internalToken,
+		db:            dbConfig{dsn: dsn},
+		clerk:         clerkConfig{key: clerkKey},
+		corsOrigins:   strings.Split(corsOrigins, ","),
+	}, nil
 }
