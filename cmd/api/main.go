@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/CodeAfu/go-ducc-api/docs"
 	"github.com/CodeAfu/go-ducc-api/internal/env"
 	"github.com/clerk/clerk-sdk-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,6 +15,13 @@ import (
 	"github.com/lmittmann/tint"
 )
 
+// @title           Ducc API
+// @version         3.0
+// @host            localhost:8088
+// @BasePath        /
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 func main() {
 	_ = godotenv.Load()
 	ctx := context.Background()
@@ -26,6 +34,12 @@ func main() {
 	dsn, err := env.GetString("GOOSE_DBSTRING")
 	if err != nil {
 		slog.Error("failed to get GOOSE_DBSTRING", "err", err)
+		os.Exit(1)
+	}
+
+	internalToken, err := env.GetString("INTERNAL_TOKEN")
+	if err != nil {
+		slog.Error("failed to get INTERNAL_TOKEN", "err", err)
 		os.Exit(1)
 	}
 
@@ -50,7 +64,8 @@ func main() {
 		clerk: clerkConfig{
 			key: clerkKey,
 		},
-		corsOrigins: strings.Split(corsOrigins, ","),
+		corsOrigins:   strings.Split(corsOrigins, ","),
+		internalToken: internalToken,
 	}
 
 	poolConfig, err := pgxpool.ParseConfig(cfg.db.dsn)

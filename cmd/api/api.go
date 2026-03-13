@@ -15,10 +15,10 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/go-chi/httprate"
 	"github.com/jackc/pgx/v5/pgxpool"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 // mount
-
 func (app *application) mount() http.Handler {
 	r := chi.NewRouter()
 
@@ -34,7 +34,22 @@ func (app *application) mount() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.StripSlashes)
 	r.Use(middleware.Timeout(60 * time.Second))
-	r.Use(httprate.LimitByIP(60, 1*time.Minute))
+	r.Use(func(next http.Handler) http.Handler {
+		limiter := httprate.NewRateLimiter(60, 1*time.Minute)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Internal-Token") == app.config.internalToken {
+				next.ServeHTTP(w, r)
+				return
+			}
+			limiter.Handler(next).ServeHTTP(w, r)
+		})
+	})
+
+	// Swagger
+	r.Get("/swagger/*", httpSwagger.WrapHandler)
+	r.Get("/swagger", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/swagger/index.html", http.StatusMovedPermanently)
+	})
 
 	// Routes
 	r.Get("/api/v3/health", func(w http.ResponseWriter, r *http.Request) {
@@ -96,10 +111,11 @@ type dbConfig struct {
 }
 
 type config struct {
-	addr        string
-	db          dbConfig
-	clerk       clerkConfig
-	corsOrigins []string
+	addr          string
+	db            dbConfig
+	clerk         clerkConfig
+	corsOrigins   []string
+	internalToken string
 }
 
 type clerkConfig struct {

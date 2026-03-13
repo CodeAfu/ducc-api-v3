@@ -1,0 +1,231 @@
+basePath: /
+definitions:
+  bingo.BingoResponse:
+    properties:
+      cells: {}
+      created_at:
+        type: string
+      created_by_email:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  bingo.CreateBingoRequest:
+    properties:
+      cells: {}
+      description:
+        type: string
+      title:
+        type: string
+    type: object
+  image.CreateImageRequest:
+    properties:
+      fileext:
+        type: string
+      filename:
+        type: string
+      img_data:
+        type: string
+      is_protected:
+        type: boolean
+    type: object
+  image.ImageResponse:
+    properties:
+      added_by:
+        type: string
+      created_at:
+        type: string
+      fileext:
+        type: string
+      filename:
+        type: string
+      id:
+        type: integer
+      img_data:
+        type: string
+      img_hash:
+        type: string
+      is_protected:
+        type: boolean
+      updated_at:
+        type: string
+    type: object
+host: localhost:8088
+info:
+  contact: {}
+  title: Ducc API
+  version: "3.0"
+paths:
+  /api/v3/bingo:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/bingo.BingoResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get all bingo cards
+      tags:
+      - bingo
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Bingo card
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/bingo.CreateBingoRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/bingo.BingoResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a bingo card
+      tags:
+      - bingo
+  /api/v3/bingo/{id}:
+    get:
+      parameters:
+      - description: Bingo ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/bingo.BingoResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get bingo card by ID
+      tags:
+      - bingo
+  /api/v3/hylscraper:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Scrape HoyoLab data
+      tags:
+      - hylscraper
+  /api/v3/images:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/image.ImageResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get all images
+      tags:
+      - images
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Image
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/image.CreateImageRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/image.ImageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upload image
+      tags:
+      - images
+  /api/v3/images/{id}:
+    delete:
+      parameters:
+      - description: Image ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete image
+      tags:
+      - images
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
