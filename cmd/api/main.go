@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/CodeAfu/go-ducc-api/internal/env"
@@ -49,7 +50,7 @@ func main() {
 		clerk: clerkConfig{
 			key: clerkKey,
 		},
-		corsOrigins, corsOrigins,
+		corsOrigins: strings.Split(corsOrigins, ","),
 	}
 
 	poolConfig, err := pgxpool.ParseConfig(cfg.db.dsn)

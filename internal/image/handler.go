@@ -2,7 +2,7 @@ package image
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -27,7 +27,7 @@ func NewHandler(s ImageService) *handler {
 func (h *handler) GetImages(w http.ResponseWriter, r *http.Request) {
 	images, err := h.service.GetImages(r.Context())
 	if err != nil {
-		log.Println(err)
+		slog.Error("message", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -38,14 +38,13 @@ func (h *handler) GetImageById(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		log.Println(err)
+		slog.Error("message", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
 	image, err := h.service.GetImageById(r.Context(), id)
 	if err != nil {
-		log.Println(err)
+		slog.Error("message", "err", err)
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -53,10 +52,11 @@ func (h *handler) GetImageById(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	w.Header().Set("Content-Type", "image/png")
+	mimeType := http.DetectContentType(image.ImgData)
+	w.Header().Set("Content-Type", mimeType)
+	w.Header().Set("Cache-Control", "public, max-age=21600") // 6 hours
 	w.WriteHeader(http.StatusOK)
-	w.Write(image)
+	w.Write(image.ImgData)
 }
 
 func (h *handler) CreateImage(w http.ResponseWriter, r *http.Request) {
@@ -66,9 +66,10 @@ func (h *handler) CreateImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO: Add filename and fileext
 	var req repo.CreateImageParams
 	if err := jsonutil.Read(r, &req); err != nil {
-		log.Println(err)
+		slog.Error("message", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -78,7 +79,7 @@ func (h *handler) CreateImage(w http.ResponseWriter, r *http.Request) {
 
 	createdImage, err := h.service.CreateImage(r.Context(), req)
 	if err != nil {
-		log.Println(err)
+		slog.Error("message", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -90,13 +91,12 @@ func (h *handler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		log.Println(err)
+		slog.Error("message", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
 	if err := h.service.DeleteImage(r.Context(), id); err != nil {
-		log.Println(err)
+		slog.Error("message", "err", err)
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return

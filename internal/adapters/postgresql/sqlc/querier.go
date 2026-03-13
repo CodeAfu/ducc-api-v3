@@ -27,7 +27,7 @@ type Querier interface {
 	GetHylPostsBySession(ctx context.Context, sessionID int64) ([]HylPost, error)
 	GetHylScrapeSessionByEmail(ctx context.Context, createdByEmail string) ([]HylScrapeSession, error)
 	GetHylScrapeSessionById(ctx context.Context, id int64) (HylScrapeSession, error)
-	GetImageById(ctx context.Context, id int64) ([]byte, error)
+	GetImageById(ctx context.Context, id int64) (Image, error)
 	GetImages(ctx context.Context) ([]Image, error)
 	UpdateBingo(ctx context.Context, arg UpdateBingoParams) (Bingo, error)
 }

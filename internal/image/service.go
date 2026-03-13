@@ -9,7 +9,7 @@ import (
 
 type ImageService interface {
 	GetImages(ctx context.Context) ([]repo.Image, error)
-	GetImageById(ctx context.Context, id int64) ([]byte, error)
+	GetImageById(ctx context.Context, id int64) (repo.Image, error)
 	CreateImage(ctx context.Context, image repo.CreateImageParams) (repo.Image, error)
 	DeleteImage(ctx context.Context, id int64) error
 }
@@ -28,7 +28,7 @@ func (s *svc) GetImages(ctx context.Context) ([]repo.Image, error) {
 	return s.repo.GetImages(ctx)
 }
 
-func (s *svc) GetImageById(ctx context.Context, id int64) ([]byte, error) {
+func (s *svc) GetImageById(ctx context.Context, id int64) (repo.Image, error) {
 	return s.repo.GetImageById(ctx, id)
 }
 
@@ -41,5 +41,12 @@ func (s *svc) CreateImage(ctx context.Context, image repo.CreateImageParams) (re
 }
 
 func (s *svc) DeleteImage(ctx context.Context, id int64) error {
+	image, err := s.repo.GetImageById(ctx, id)
+	if err != nil {
+		return err
+	}
+	if image.IsProtected {
+		return errors.New("image is protected")
+	}
 	return s.repo.DeleteImage(ctx, id)
 }

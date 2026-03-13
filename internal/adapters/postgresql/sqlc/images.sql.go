@@ -12,17 +12,25 @@ import (
 )
 
 const createImage = `-- name: CreateImage :one
-INSERT INTO images (img_data, img_hash, added_by) VALUES ($1, $2, $3) RETURNING id, img_data, img_hash, created_at, updated_at, added_by
+INSERT INTO images (img_data, img_hash, added_by, filename, fileext) VALUES ($1, $2, $3, $4, $5) RETURNING id, img_data, img_hash, created_at, updated_at, added_by, filename, fileext, is_protected
 `
 
 type CreateImageParams struct {
-	ImgData []byte      `json:"img_data"`
-	ImgHash string      `json:"img_hash"`
-	AddedBy pgtype.Text `json:"added_by"`
+	ImgData  []byte      `json:"img_data"`
+	ImgHash  string      `json:"img_hash"`
+	AddedBy  pgtype.Text `json:"added_by"`
+	Filename string      `json:"filename"`
+	Fileext  string      `json:"fileext"`
 }
 
 func (q *Queries) CreateImage(ctx context.Context, arg CreateImageParams) (Image, error) {
-	row := q.db.QueryRow(ctx, createImage, arg.ImgData, arg.ImgHash, arg.AddedBy)
+	row := q.db.QueryRow(ctx, createImage,
+		arg.ImgData,
+		arg.ImgHash,
+		arg.AddedBy,
+		arg.Filename,
+		arg.Fileext,
+	)
 	var i Image
 	err := row.Scan(
 		&i.ID,
@@ -31,6 +39,9 @@ func (q *Queries) CreateImage(ctx context.Context, arg CreateImageParams) (Image
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AddedBy,
+		&i.Filename,
+		&i.Fileext,
+		&i.IsProtected,
 	)
 	return i, err
 }
@@ -45,18 +56,28 @@ func (q *Queries) DeleteImage(ctx context.Context, id int64) error {
 }
 
 const getImageById = `-- name: GetImageById :one
-SELECT img_data FROM images WHERE id = $1
+SELECT id, img_data, img_hash, created_at, updated_at, added_by, filename, fileext, is_protected FROM images WHERE id = $1
 `
 
-func (q *Queries) GetImageById(ctx context.Context, id int64) ([]byte, error) {
+func (q *Queries) GetImageById(ctx context.Context, id int64) (Image, error) {
 	row := q.db.QueryRow(ctx, getImageById, id)
-	var img_data []byte
-	err := row.Scan(&img_data)
-	return img_data, err
+	var i Image
+	err := row.Scan(
+		&i.ID,
+		&i.ImgData,
+		&i.ImgHash,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AddedBy,
+		&i.Filename,
+		&i.Fileext,
+		&i.IsProtected,
+	)
+	return i, err
 }
 
 const getImages = `-- name: GetImages :many
-SELECT id, img_data, img_hash, created_at, updated_at, added_by FROM images
+SELECT id, img_data, img_hash, created_at, updated_at, added_by, filename, fileext, is_protected FROM images
 `
 
 func (q *Queries) GetImages(ctx context.Context) ([]Image, error) {
@@ -75,6 +96,9 @@ func (q *Queries) GetImages(ctx context.Context) ([]Image, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AddedBy,
+			&i.Filename,
+			&i.Fileext,
+			&i.IsProtected,
 		); err != nil {
 			return nil, err
 		}

@@ -56,10 +56,13 @@ type HylScrapeSession struct {
 }
 
 type Image struct {
-	ID        int64              `json:"id"`
-	ImgData   []byte             `json:"img_data"`
-	ImgHash   string             `json:"img_hash"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	AddedBy   pgtype.Text        `json:"added_by"`
+	ID          int64              `json:"id"`
+	ImgData     []byte             `json:"img_data"`
+	ImgHash     string             `json:"img_hash"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	AddedBy     pgtype.Text        `json:"added_by"`
+	Filename    string             `json:"filename"`
+	Fileext     string             `json:"fileext"`
+	IsProtected bool               `json:"is_protected"`
 }
