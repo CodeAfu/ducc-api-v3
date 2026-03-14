@@ -11,7 +11,7 @@ import (
 	"github.com/clerk/clerk-sdk-go/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
+	// "github.com/jackc/pgx/v5/pgtype"
 )
 
 type handler struct {
@@ -90,7 +90,6 @@ func (h *handler) CreateImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Add filename and fileext
 	var req repo.CreateImageParams
 	if err := jsonutil.Read(r, &req); err != nil {
 		slog.Error("message", "err", err)
@@ -99,7 +98,13 @@ func (h *handler) CreateImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := claims.Subject
-	req.AddedBy = pgtype.Text{String: userID, Valid: true}
+
+	slog.Info("request payload: ",
+		"filename", req.Filename,
+		"fileext", req.Fileext,
+		"added_by", req.AddedBy,
+		"clerk_id", userID,
+	)
 
 	createdImage, err := h.service.CreateImage(r.Context(), req)
 	if err != nil {
