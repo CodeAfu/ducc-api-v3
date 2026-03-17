@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type ImageService interface {
@@ -37,7 +38,14 @@ func (s *svc) CreateImage(ctx context.Context, image repo.CreateImageParams) (re
 		return repo.Image{}, errors.New("invalid image")
 	}
 	image.ImgHash = GenerateImageHash(image.ImgData)
-	return s.repo.CreateImage(ctx, image)
+	result, err := s.repo.CreateImage(ctx, image)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return repo.Image{}, ErrDuplicateImage
+		}
+	}
+	return result, nil
 }
 
 func (s *svc) DeleteImage(ctx context.Context, id int64) error {
@@ -46,7 +54,7 @@ func (s *svc) DeleteImage(ctx context.Context, id int64) error {
 		return err
 	}
 	if image.IsProtected {
-		return errors.New("image is protected")
+		return ErrProtectedImage
 	}
 	return s.repo.DeleteImage(ctx, id)
 }

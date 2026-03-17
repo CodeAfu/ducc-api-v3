@@ -7,6 +7,7 @@ import (
 
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
 	"github.com/CodeAfu/go-ducc-api/internal/bingo"
+	"github.com/CodeAfu/go-ducc-api/internal/genshin"
 	"github.com/CodeAfu/go-ducc-api/internal/hylscraper"
 	"github.com/CodeAfu/go-ducc-api/internal/image"
 	clerkhttp "github.com/clerk/clerk-sdk-go/v2/http"
@@ -30,9 +31,10 @@ func (app *application) mount() http.Handler {
 	}))
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
+	r.Use(slogLogger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.StripSlashes)
+	r.Use(clerkhttp.WithHeaderAuthorization())
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(func(next http.Handler) http.Handler {
 		limiter := httprate.NewRateLimiter(60, 1*time.Minute)
@@ -53,7 +55,7 @@ func (app *application) mount() http.Handler {
 		})
 	}
 
-	// Routes
+	// Health Check
 	r.Get("/api/v3/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!"))
 	})
@@ -64,7 +66,7 @@ func (app *application) mount() http.Handler {
 	r.Get("/api/v3/bingo", bingoHandler.GetBingo)
 	r.Get("/api/v3/bingo/{id}", bingoHandler.GetBingoById)
 	r.Group(func(r chi.Router) {
-		r.Use(clerkhttp.WithHeaderAuthorization())
+		r.Use(clerkhttp.RequireHeaderAuthorization())
 		r.Post("/api/v3/bingo", bingoHandler.CreateBingo)
 	})
 
@@ -74,7 +76,7 @@ func (app *application) mount() http.Handler {
 	r.Get("/api/v3/images", imageHandler.GetImages)
 	r.Get("/api/v3/images/{id}", imageHandler.GetImageById)
 	r.Group(func(r chi.Router) {
-		r.Use(clerkhttp.WithHeaderAuthorization())
+		r.Use(clerkhttp.RequireHeaderAuthorization())
 		r.Post("/api/v3/images", imageHandler.CreateImage)
 		r.Delete("/api/v3/images/{id}", imageHandler.DeleteImage)
 	})
@@ -83,6 +85,22 @@ func (app *application) mount() http.Handler {
 	hylscraperService := hylscraper.NewService(repo.New(app.db), app.db)
 	hylscraperHandler := hylscraper.NewHandler(hylscraperService)
 	r.Get("/api/v3/hylscraper", hylscraperHandler.Scrape)
+
+	// Genshin Impact
+	genshinService := genshin.NewService(repo.New(app.db), app.db)
+	genshinHandler := genshin.NewHandler(genshinService)
+	r.Get("/api/v3/genshin/characters", genshinHandler.GetAllChars)
+	r.Get("/api/v3/genshin/characters/{id}", genshinHandler.GetAllChars) // TODO: change the handler
+	r.Get("/api/v3/genshin/elements", genshinHandler.GetAllElements)
+	r.Get("/api/v3/genshin/elements/id", genshinHandler.GetElementId)
+	r.Group(func(r chi.Router) {
+		r.Use(clerkhttp.RequireHeaderAuthorization())
+		r.Post("/api/v3/genshin/characters", genshinHandler.AddChar)
+		r.Put("/api/v3/genshin/characters/{id}", genshinHandler.EditChar)
+		r.Delete("/api/v3/genshin/characters/{id}", genshinHandler.DeleteChar)
+
+		r.Get("/api/v3/genshin/profiles/{id}", genshinHandler.GetAllCharsFromProfile)
+	})
 
 	return r
 }
@@ -95,12 +113,25 @@ func (app *application) run(h http.Handler) error {
 		ReadTimeout:  10 * time.Second,
 		IdleTimeout:  time.Minute,
 	}
-
 	srv.SetKeepAlivesEnabled(true)
-
 	slog.Info("server started", "addr", app.config.addr)
-
 	return srv.ListenAndServe()
+}
+
+func slogLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(ww, r)
+		slog.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", ww.Status(),
+			"bytes", ww.BytesWritten(),
+			"duration", time.Since(start),
+			"ip", r.RemoteAddr,
+		)
+	})
 }
 
 type application struct {

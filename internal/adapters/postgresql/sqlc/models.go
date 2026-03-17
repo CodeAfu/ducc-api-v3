@@ -23,6 +23,31 @@ type Bingo struct {
 	CreatedByEmail pgtype.Text        `json:"created_by_email"`
 }
 
+type CharDetail struct {
+	ID        int64              `json:"id"`
+	Name      string             `json:"name"`
+	ElementID int16              `json:"element_id"`
+	Stars     int16              `json:"stars"`
+	Icon      []byte             `json:"icon"`
+	Notes     pgtype.Text        `json:"notes"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Element struct {
+	ID      int16       `json:"id"`
+	Name    string      `json:"name"`
+	IconUrl pgtype.Text `json:"icon_url"`
+}
+
+type GenshinProfile struct {
+	ID        int64              `json:"id"`
+	Name      string             `json:"name"`
+	Notes     pgtype.Text        `json:"notes"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type HylComment struct {
 	ID              int64              `json:"id"`
 	SessionID       int64              `json:"session_id"`
@@ -65,4 +90,15 @@ type Image struct {
 	Filename    string             `json:"filename"`
 	Fileext     string             `json:"fileext"`
 	IsProtected bool               `json:"is_protected"`
+}
+
+type ProfileChar struct {
+	AccID         int64       `json:"acc_id"`
+	CharID        int64       `json:"char_id"`
+	Level         int16       `json:"level"`
+	Constellation int16       `json:"constellation"`
+	TalentNa      int16       `json:"talent_na"`
+	TalentE       int16       `json:"talent_e"`
+	TalentQ       int16       `json:"talent_q"`
+	Notes         pgtype.Text `json:"notes"`
 }

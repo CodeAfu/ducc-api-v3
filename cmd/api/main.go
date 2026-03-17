@@ -73,27 +73,27 @@ func newDBPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 }
 
 func loadConfig() (config, error) {
-	internalToken, err := env.GetString("INTERNAL_TOKEN")
+	internalToken, err := envutils.GetString("INTERNAL_TOKEN")
 	if err != nil {
 		return config{}, fmt.Errorf("INTERNAL_TOKEN: %w", err)
 	}
 
-	envVar, err := env.GetString("ENV")
+	envVar, err := envutils.GetString("ENV")
 	if err != nil {
 		return config{}, fmt.Errorf("ENV: %w", err)
 	}
 
-	dsn, err := env.GetString("GOOSE_DBSTRING")
+	dsn, err := envutils.GetString("GOOSE_DBSTRING")
 	if err != nil {
 		return config{}, fmt.Errorf("GOOSE_DBSTRING: %w", err)
 	}
 
-	clerkKey, err := env.GetString("CLERK_SECRET_KEY")
+	clerkKey, err := envutils.GetString("CLERK_SECRET_KEY")
 	if err != nil {
 		return config{}, fmt.Errorf("CLERK_SECRET_KEY: %w", err)
 	}
 
-	corsOrigins, err := env.GetString("CORS_ORIGINS")
+	corsOrigins, err := envutils.GetString("CORS_ORIGINS")
 	if err != nil {
 		return config{}, fmt.Errorf("CORS_ORIGINS: %w", err)
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/clerk/clerk-sdk-go/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
-	// "github.com/jackc/pgx/v5/pgtype"
 )
 
 type handler struct {
@@ -33,14 +32,14 @@ func NewHandler(s ImageService) *handler {
 func (h *handler) GetImages(w http.ResponseWriter, r *http.Request) {
 	images, err := h.service.GetImages(r.Context())
 	if err != nil {
-		slog.Error("message", "err", err)
+		slog.Error("error while fetching images from db", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	jsonutil.Write(w, http.StatusOK, images)
 }
 
-// @Summary  Upload image
+// @Summary  Get image by ID
 // @Tags     images
 // @Accept   json
 // @Produce  json
@@ -53,13 +52,13 @@ func (h *handler) GetImageById(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		slog.Error("message", "err", err)
+		slog.Error("invalid id value", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	image, err := h.service.GetImageById(r.Context(), id)
 	if err != nil {
-		slog.Error("message", "err", err)
+		slog.Error("error while fetching image from db", "err", err)
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -89,30 +88,30 @@ func (h *handler) CreateImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no session claims found", http.StatusUnauthorized)
 		return
 	}
-
 	var req repo.CreateImageParams
 	if err := jsonutil.Read(r, &req); err != nil {
-		slog.Error("message", "err", err)
+		slog.Error("failed to read request body", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
 	userID := claims.Subject
-
 	slog.Info("request payload: ",
 		"filename", req.Filename,
 		"fileext", req.Fileext,
 		"added_by", req.AddedBy,
 		"clerk_id", userID,
 	)
-
 	createdImage, err := h.service.CreateImage(r.Context(), req)
 	if err != nil {
-		slog.Error("message", "err", err)
+		if errors.Is(err, ErrDuplicateImage) {
+			slog.Error("duplicate image detected", "error", err)
+			http.Error(w, "image already exists", http.StatusConflict)
+			return
+		}
+		slog.Error("error occurred while creating image", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 	jsonutil.Write(w, http.StatusCreated, createdImage)
 }
 
@@ -127,12 +126,16 @@ func (h *handler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		slog.Error("message", "err", err)
+		slog.Error("failed to read request body", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if err := h.service.DeleteImage(r.Context(), id); err != nil {
-		slog.Error("message", "err", err)
+		if errors.Is(err, ErrProtectedImage) {
+			slog.Error("this image is protected from deletion", "error", err)
+			http.Error(w, "you are not allowed to delete this image", http.StatusConflict)
+		}
+		slog.Error("error occurred while attempting to delete image", "error", err, "id", id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -140,4 +143,5 @@ func (h *handler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.WriteHeader(http.StatusNoContent)
 }

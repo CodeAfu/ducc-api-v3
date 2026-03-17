@@ -11,16 +11,29 @@ import (
 )
 
 type Querier interface {
+	AddCharToProfile(ctx context.Context, arg AddCharToProfileParams) (AddCharToProfileRow, error)
 	AddHylComment(ctx context.Context, arg AddHylCommentParams) (HylComment, error)
 	AddHylPost(ctx context.Context, arg AddHylPostParams) (HylPost, error)
 	CreateBingo(ctx context.Context, arg CreateBingoParams) (Bingo, error)
+	CreateGenshinChar(ctx context.Context, arg CreateGenshinCharParams) (CreateGenshinCharRow, error)
+	CreateGenshinProfile(ctx context.Context, arg CreateGenshinProfileParams) (GenshinProfile, error)
 	CreateHylScrapeSession(ctx context.Context, arg CreateHylScrapeSessionParams) (HylScrapeSession, error)
 	CreateImage(ctx context.Context, arg CreateImageParams) (Image, error)
 	DeleteBingo(ctx context.Context, id int64) error
+	DeleteCharFromProfile(ctx context.Context, arg DeleteCharFromProfileParams) error
+	DeleteGenshinChar(ctx context.Context, id int64) error
+	DeleteGenshinProfile(ctx context.Context, id int64) error
 	DeleteImage(ctx context.Context, id int64) error
+	EditCharFromProfile(ctx context.Context, arg EditCharFromProfileParams) (EditCharFromProfileRow, error)
+	EditGenshinChar(ctx context.Context, arg EditGenshinCharParams) (EditGenshinCharRow, error)
+	EditGenshinProfile(ctx context.Context, arg EditGenshinProfileParams) (GenshinProfile, error)
+	GetAllCharsFromProfile(ctx context.Context, accID int64) ([]GetAllCharsFromProfileRow, error)
+	GetAllElements(ctx context.Context) ([]Element, error)
+	GetAllGenshinChars(ctx context.Context) ([]GetAllGenshinCharsRow, error)
 	GetBingo(ctx context.Context) ([]Bingo, error)
 	GetBingoByEmail(ctx context.Context, createdByEmail pgtype.Text) ([]Bingo, error)
 	GetBingoById(ctx context.Context, id int64) (Bingo, error)
+	GetElementId(ctx context.Context, name string) (int16, error)
 	GetHylCommentByAuthor(ctx context.Context, author string) ([]HylComment, error)
 	GetHylCommentsAndPostsFromAuthor(ctx context.Context, author string) ([]HylPost, error)
 	GetHylPostByAuthor(ctx context.Context, author string) ([]HylPost, error)
@@ -29,6 +42,7 @@ type Querier interface {
 	GetHylScrapeSessionById(ctx context.Context, id int64) (HylScrapeSession, error)
 	GetImageById(ctx context.Context, id int64) (Image, error)
 	GetImages(ctx context.Context) ([]Image, error)
+	GetProfiles(ctx context.Context, id int64) (GenshinProfile, error)
 	UpdateBingo(ctx context.Context, arg UpdateBingoParams) (Bingo, error)
 }
 
