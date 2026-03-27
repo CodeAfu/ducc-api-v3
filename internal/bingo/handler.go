@@ -4,11 +4,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 
+	"github.com/CodeAfu/go-ducc-api/internal/adapters/http/httputil"
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
-	"github.com/CodeAfu/go-ducc-api/internal/json"
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -35,7 +33,7 @@ func (h *handler) GetBingo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	jsonutil.Write(w, http.StatusOK, bingo)
+	httputil.Write(w, http.StatusOK, bingo)
 }
 
 // @Summary  Get bingo card by ID
@@ -46,11 +44,8 @@ func (h *handler) GetBingo(w http.ResponseWriter, r *http.Request) {
 // @Failure  404 {object} map[string]string
 // @Router   /api/v3/bingo/{id} [get]
 func (h *handler) GetBingoById(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		slog.Error("id is not a valid integer", "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	id, ok := httputil.ParseID(w, r, "id")
+	if !ok {
 		return
 	}
 	bingo, err := h.service.GetBingoById(r.Context(), id)
@@ -63,15 +58,12 @@ func (h *handler) GetBingoById(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	jsonutil.Write(w, http.StatusOK, bingo)
+	httputil.Write(w, http.StatusOK, bingo)
 }
 
 func (h *handler) DeleteBingo(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		slog.Error("id is not a valid integer", "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	id, ok := httputil.ParseID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.service.DeleteBingo(r.Context(), id); err != nil {
@@ -98,7 +90,7 @@ func (h *handler) DeleteBingo(w http.ResponseWriter, r *http.Request) {
 // @Router   /api/v3/bingo [post]
 func (h *handler) CreateBingo(w http.ResponseWriter, r *http.Request) {
 	var req repo.CreateBingoParams
-	if err := jsonutil.Read(r, &req); err != nil {
+	if err := httputil.Read(r, &req); err != nil {
 		slog.Error("failed to read request body", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -117,5 +109,5 @@ func (h *handler) CreateBingo(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	jsonutil.Write(w, http.StatusCreated, createdBingo)
+	httputil.Write(w, http.StatusCreated, createdBingo)
 }

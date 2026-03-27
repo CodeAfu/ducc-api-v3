@@ -19,7 +19,7 @@ import (
 
 func TestGetAllCharsIntegration(t *testing.T) {
 	_, h := getHandlerAndService(t)
-	checkArrayResponseShape(t, h.GetAllChars, func(t *testing.T, i int, c charResponse) {
+	checkArrayResponseShape(t, h.GetAllChars, func(t *testing.T, i int, c repo.GetAllGenshinCharsRow) {
 		if c.ID == 0 {
 			t.Errorf("body[%d]: missing ID", i)
 		}
@@ -44,7 +44,7 @@ func TestAddCharIntegration(t *testing.T) {
 	}
 	t.Cleanup(func() { tx.Rollback(context.Background()) })
 
-	svc := NewService(repo.New(tx), tx)
+	svc := NewService(repo.New(tx), db)
 	h := NewHandler(svc)
 
 	payload := `{"name":"Test Char","element_name":"pyro","stars":4}`
@@ -52,7 +52,7 @@ func TestAddCharIntegration(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	h.AddChar(w, req)
+	h.AddGenshinChar(w, req)
 
 	res := w.Result()
 	defer res.Body.Close()
@@ -82,7 +82,7 @@ func TestEditCharIntegration(t *testing.T) {
 	}
 	t.Cleanup(func() { tx.Rollback(context.Background()) })
 
-	svc := NewService(repo.New(tx), tx)
+	svc := NewService(repo.New(tx), db)
 	h := NewHandler(svc)
 
 	targetId := 1
@@ -94,7 +94,7 @@ func TestEditCharIntegration(t *testing.T) {
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 	w := httptest.NewRecorder()
 
-	h.EditChar(w, req)
+	h.EditGenshinChar(w, req)
 
 	res := w.Result()
 	defer res.Body.Close()

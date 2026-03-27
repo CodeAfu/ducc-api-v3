@@ -4,6 +4,9 @@ SELECT * FROM images;
 -- name: GetImageById :one
 SELECT * FROM images WHERE id = $1;
 
+-- name: GetImageByHash :one
+SELECT * FROM images WHERE img_hash = $1;
+
 -- name: CreateImage :one
 INSERT INTO images (img_data, img_hash, added_by, filename, fileext) VALUES ($1, $2, $3, $4, $5) RETURNING *;
 

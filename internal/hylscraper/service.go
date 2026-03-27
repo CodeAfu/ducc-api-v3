@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type HylService interface {
@@ -11,11 +12,11 @@ type HylService interface {
 }
 
 type svc struct {
-	repo repo.Querier
-	db   repo.DBTX
+	repo *repo.Queries
+	db   *pgxpool.Pool
 }
 
-func NewService(repo repo.Querier, db repo.DBTX) HylService {
+func NewService(repo *repo.Queries, db *pgxpool.Pool) HylService {
 	return &svc{
 		repo: repo,
 		db:   db,

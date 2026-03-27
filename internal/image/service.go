@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 
+	"github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/pgerr"
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type ImageService interface {
@@ -16,12 +18,14 @@ type ImageService interface {
 }
 
 type svc struct {
-	repo repo.Querier
+	repo *repo.Queries
+	db   *pgxpool.Pool
 }
 
-func NewService(repo repo.Querier) ImageService {
+func NewService(repo *repo.Queries, db *pgxpool.Pool) ImageService {
 	return &svc{
 		repo: repo,
+		db:   db,
 	}
 }
 
@@ -35,15 +39,21 @@ func (s *svc) GetImageById(ctx context.Context, id int64) (repo.Image, error) {
 
 func (s *svc) CreateImage(ctx context.Context, image repo.CreateImageParams) (repo.Image, error) {
 	if !CheckValidImage(image.ImgData) {
-		return repo.Image{}, errors.New("invalid image")
+		return repo.Image{}, ErrInvalidImage
 	}
 	image.ImgHash = GenerateImageHash(image.ImgData)
 	result, err := s.repo.CreateImage(ctx, image)
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return repo.Image{}, ErrDuplicateImage
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case pgerr.UniqueViolation:
+				return repo.Image{}, ErrDuplicateImage
+			default:
+				return repo.Image{}, err
+			}
 		}
+		return repo.Image{}, err
 	}
 	return result, nil
 }

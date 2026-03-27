@@ -4,12 +4,10 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 
+	"github.com/CodeAfu/go-ducc-api/internal/adapters/http/httputil"
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
-	jsonutil "github.com/CodeAfu/go-ducc-api/internal/json"
 	"github.com/clerk/clerk-sdk-go/v2"
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -36,7 +34,7 @@ func (h *handler) GetImages(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	jsonutil.Write(w, http.StatusOK, images)
+	httputil.Write(w, http.StatusOK, images)
 }
 
 // @Summary  Get image by ID
@@ -49,21 +47,21 @@ func (h *handler) GetImages(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router   /api/v3/images [post]
 func (h *handler) GetImageById(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		slog.Error("invalid id value", "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	id, ok := httputil.ParseID(w, r, "id")
+	if !ok {
 		return
 	}
 	image, err := h.service.GetImageById(r.Context(), id)
 	if err != nil {
 		slog.Error("error while fetching image from db", "err", err)
-		if errors.Is(err, pgx.ErrNoRows) {
+		switch {
+		case errors.Is(err, ErrDoesNotExist):
 			http.Error(w, err.Error(), http.StatusNotFound)
-			return
+		case errors.Is(err, ErrDuplicateImage), errors.Is(err, ErrInvalidImage):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	mimeType := http.DetectContentType(image.ImgData)
@@ -89,7 +87,7 @@ func (h *handler) CreateImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req repo.CreateImageParams
-	if err := jsonutil.Read(r, &req); err != nil {
+	if err := httputil.Read(r, &req); err != nil {
 		slog.Error("failed to read request body", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -112,7 +110,7 @@ func (h *handler) CreateImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	jsonutil.Write(w, http.StatusCreated, createdImage)
+	httputil.Write(w, http.StatusCreated, createdImage)
 }
 
 // @Summary  Delete image
@@ -123,11 +121,8 @@ func (h *handler) CreateImage(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router   /api/v3/images/{id} [delete]
 func (h *handler) DeleteImage(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		slog.Error("failed to read request body", "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	id, ok := httputil.ParseID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.service.DeleteImage(r.Context(), id); err != nil {

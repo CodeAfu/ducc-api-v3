@@ -8,6 +8,7 @@ import (
 
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type BingoService interface {
@@ -18,12 +19,14 @@ type BingoService interface {
 }
 
 type svc struct {
-	repo repo.Querier
+	repo *repo.Queries
+	db   *pgxpool.Pool
 }
 
-func NewService(repo repo.Querier) BingoService {
+func NewService(repo *repo.Queries, db *pgxpool.Pool) BingoService {
 	return &svc{
 		repo: repo,
+		db:   db,
 	}
 }
 

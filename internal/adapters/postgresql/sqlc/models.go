@@ -93,7 +93,7 @@ type Image struct {
 }
 
 type ProfileChar struct {
-	AccID         int64       `json:"acc_id"`
+	ProfID        int64       `json:"prof_id"`
 	CharID        int64       `json:"char_id"`
 	Level         int16       `json:"level"`
 	Constellation int16       `json:"constellation"`

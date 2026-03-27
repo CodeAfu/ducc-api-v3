@@ -57,11 +57,11 @@ func (app *application) mount() http.Handler {
 
 	// Health Check
 	r.Get("/api/v3/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello World!"))
+		w.Write([]byte("service is running"))
 	})
 
 	// Bingo
-	bingoService := bingo.NewService(repo.New(app.db))
+	bingoService := bingo.NewService(repo.New(app.db), app.db)
 	bingoHandler := bingo.NewHandler(bingoService)
 	r.Get("/api/v3/bingo", bingoHandler.GetBingo)
 	r.Get("/api/v3/bingo/{id}", bingoHandler.GetBingoById)
@@ -71,7 +71,7 @@ func (app *application) mount() http.Handler {
 	})
 
 	// Image
-	imageService := image.NewService(repo.New(app.db))
+	imageService := image.NewService(repo.New(app.db), app.db)
 	imageHandler := image.NewHandler(imageService)
 	r.Get("/api/v3/images", imageHandler.GetImages)
 	r.Get("/api/v3/images/{id}", imageHandler.GetImageById)
@@ -90,16 +90,29 @@ func (app *application) mount() http.Handler {
 	genshinService := genshin.NewService(repo.New(app.db), app.db)
 	genshinHandler := genshin.NewHandler(genshinService)
 	r.Get("/api/v3/genshin/characters", genshinHandler.GetAllChars)
-	r.Get("/api/v3/genshin/characters/{id}", genshinHandler.GetAllChars) // TODO: change the handler
+	r.Get("/api/v3/genshin/characters/{id}", genshinHandler.GetGenshinChar)
 	r.Get("/api/v3/genshin/elements", genshinHandler.GetAllElements)
+	r.Get("/api/v3/genshin/elements/{element}/icon", genshinHandler.GetElementIconByName)
 	r.Get("/api/v3/genshin/elements/id", genshinHandler.GetElementId)
+	// --- TODO: move to protected group
+	r.Get("/api/v3/genshin/profiles", genshinHandler.GetProfiles)
+	r.Get("/api/v3/genshin/profiles/{id}", genshinHandler.GetProfile)
+	r.Post("/api/v3/genshin/profiles", genshinHandler.CreateGenshinProfile)
+	r.Put("/api/v3/genshin/profiles/{id}", genshinHandler.EditGenshinProfile)
+	r.Delete("/api/v3/genshin/profiles/{id}", genshinHandler.DeleteGenshinProfile)
+
+	r.Post("/api/v3/genshin/characters", genshinHandler.AddGenshinChar)
+	r.Put("/api/v3/genshin/characters/{id}", genshinHandler.EditGenshinChar)
+	r.Delete("/api/v3/genshin/characters/{id}", genshinHandler.DeleteGenshinChar)
+
+	r.Get("/api/v3/genshin/profiles/{id}/characters", genshinHandler.GetAllCharsFromProfile)
+	r.Post("/api/v3/genshin/profiles/{prof_id}/{char_name}", genshinHandler.AddCharToProfile)
+	r.Put("/api/v3/genshin/profiles/{prof_id}/{char_id}", genshinHandler.EditCharFromProfile)
+	r.Delete("/api/v3/genshin/profiles/{prof_id}/{char_id}", genshinHandler.DeleteCharFromProfile)
+	r.Get("/api/v3/genshin/profiles/{id}/stats", genshinHandler.GetProfileStats)
+	// ---
 	r.Group(func(r chi.Router) {
 		r.Use(clerkhttp.RequireHeaderAuthorization())
-		r.Post("/api/v3/genshin/characters", genshinHandler.AddChar)
-		r.Put("/api/v3/genshin/characters/{id}", genshinHandler.EditChar)
-		r.Delete("/api/v3/genshin/characters/{id}", genshinHandler.DeleteChar)
-
-		r.Get("/api/v3/genshin/profiles/{id}", genshinHandler.GetAllCharsFromProfile)
 	})
 
 	return r

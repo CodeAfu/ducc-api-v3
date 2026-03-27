@@ -55,6 +55,27 @@ func (q *Queries) DeleteImage(ctx context.Context, id int64) error {
 	return err
 }
 
+const getImageByHash = `-- name: GetImageByHash :one
+SELECT id, img_data, img_hash, created_at, updated_at, added_by, filename, fileext, is_protected FROM images WHERE img_hash = $1
+`
+
+func (q *Queries) GetImageByHash(ctx context.Context, imgHash string) (Image, error) {
+	row := q.db.QueryRow(ctx, getImageByHash, imgHash)
+	var i Image
+	err := row.Scan(
+		&i.ID,
+		&i.ImgData,
+		&i.ImgHash,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AddedBy,
+		&i.Filename,
+		&i.Fileext,
+		&i.IsProtected,
+	)
+	return i, err
+}
+
 const getImageById = `-- name: GetImageById :one
 SELECT id, img_data, img_hash, created_at, updated_at, added_by, filename, fileext, is_protected FROM images WHERE id = $1
 `

@@ -14,28 +14,28 @@ import (
 const addCharToProfile = `-- name: AddCharToProfile :one
 WITH inserted AS (
     INSERT INTO profile_chars (
-        acc_id, char_id, level, constellation,
+        prof_id, char_id, level, constellation,
         talent_na, talent_e, talent_q, notes
     ) VALUES (
         $1,
         (SELECT id FROM char_details cd WHERE cd.name = $2),
-        $3, $4, $5, $6, $7, $8
+        $3, $4, $5, $6, $7, $8 
     )
-    RETURNING acc_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes
+    RETURNING prof_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes
 )
 SELECT
-    profile_chars.acc_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes,
+    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes,
     char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at,
     elements.id, elements.name, elements.icon_url
 FROM inserted
-JOIN profile_chars ON profile_chars.acc_id = inserted.acc_id AND profile_chars.char_id = inserted.char_id
+JOIN profile_chars ON profile_chars.prof_id = inserted.prof_id AND profile_chars.char_id = inserted.char_id
 JOIN char_details ON profile_chars.char_id = char_details.id
 JOIN elements ON char_details.element_id = elements.id
 `
 
 type AddCharToProfileParams struct {
-	AccID         int64       `json:"acc_id"`
-	Name          string      `json:"name"`
+	ProfID        int64       `json:"prof_id"`
+	CharName      string      `json:"char_name"`
 	Level         int16       `json:"level"`
 	Constellation int16       `json:"constellation"`
 	TalentNa      int16       `json:"talent_na"`
@@ -52,8 +52,8 @@ type AddCharToProfileRow struct {
 
 func (q *Queries) AddCharToProfile(ctx context.Context, arg AddCharToProfileParams) (AddCharToProfileRow, error) {
 	row := q.db.QueryRow(ctx, addCharToProfile,
-		arg.AccID,
-		arg.Name,
+		arg.ProfID,
+		arg.CharName,
 		arg.Level,
 		arg.Constellation,
 		arg.TalentNa,
@@ -63,7 +63,7 @@ func (q *Queries) AddCharToProfile(ctx context.Context, arg AddCharToProfilePara
 	)
 	var i AddCharToProfileRow
 	err := row.Scan(
-		&i.ProfileChar.AccID,
+		&i.ProfileChar.ProfID,
 		&i.ProfileChar.CharID,
 		&i.ProfileChar.Level,
 		&i.ProfileChar.Constellation,
@@ -168,16 +168,16 @@ func (q *Queries) CreateGenshinProfile(ctx context.Context, arg CreateGenshinPro
 }
 
 const deleteCharFromProfile = `-- name: DeleteCharFromProfile :exec
-DELETE FROM profile_chars WHERE acc_id = $1 AND char_id = $2
+DELETE FROM profile_chars WHERE prof_id = $1 AND char_id = $2
 `
 
 type DeleteCharFromProfileParams struct {
-	AccID  int64 `json:"acc_id"`
+	ProfID int64 `json:"prof_id"`
 	CharID int64 `json:"char_id"`
 }
 
 func (q *Queries) DeleteCharFromProfile(ctx context.Context, arg DeleteCharFromProfileParams) error {
-	_, err := q.db.Exec(ctx, deleteCharFromProfile, arg.AccID, arg.CharID)
+	_, err := q.db.Exec(ctx, deleteCharFromProfile, arg.ProfID, arg.CharID)
 	return err
 }
 
@@ -205,21 +205,21 @@ WITH updated AS (
     SET
         level = $3, constellation = $4, talent_na = $5,
         talent_e = $6, talent_q = $7, notes = $8
-    WHERE profile_chars.acc_id = $1 AND profile_chars.char_id = $2
-    RETURNING acc_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes
+    WHERE profile_chars.prof_id = $1 AND profile_chars.char_id = $2
+    RETURNING prof_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes
 )
 SELECT
-    profile_chars.acc_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes,
+    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes,
     char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at,
     elements.id, elements.name, elements.icon_url
 FROM updated
-JOIN profile_chars ON profile_chars.acc_id = updated.acc_id AND profile_chars.char_id = updated.char_id
+JOIN profile_chars ON profile_chars.prof_id = updated.prof_id AND profile_chars.char_id = updated.char_id
 JOIN char_details ON profile_chars.char_id = char_details.id
 JOIN elements ON char_details.element_id = elements.id
 `
 
 type EditCharFromProfileParams struct {
-	AccID         int64       `json:"acc_id"`
+	ProfID        int64       `json:"prof_id"`
 	CharID        int64       `json:"char_id"`
 	Level         int16       `json:"level"`
 	Constellation int16       `json:"constellation"`
@@ -237,7 +237,7 @@ type EditCharFromProfileRow struct {
 
 func (q *Queries) EditCharFromProfile(ctx context.Context, arg EditCharFromProfileParams) (EditCharFromProfileRow, error) {
 	row := q.db.QueryRow(ctx, editCharFromProfile,
-		arg.AccID,
+		arg.ProfID,
 		arg.CharID,
 		arg.Level,
 		arg.Constellation,
@@ -248,7 +248,7 @@ func (q *Queries) EditCharFromProfile(ctx context.Context, arg EditCharFromProfi
 	)
 	var i EditCharFromProfileRow
 	err := row.Scan(
-		&i.ProfileChar.AccID,
+		&i.ProfileChar.ProfID,
 		&i.ProfileChar.CharID,
 		&i.ProfileChar.Level,
 		&i.ProfileChar.Constellation,
@@ -363,23 +363,26 @@ func (q *Queries) EditGenshinProfile(ctx context.Context, arg EditGenshinProfile
 
 const getAllCharsFromProfile = `-- name: GetAllCharsFromProfile :many
 SELECT
-    profile_chars.acc_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, 
+    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, 
     char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, 
+    genshin_profiles.id, genshin_profiles.name, genshin_profiles.notes, genshin_profiles.created_at, genshin_profiles.updated_at,
     elements.id, elements.name, elements.icon_url
 FROM profile_chars
 JOIN char_details ON profile_chars.char_id = char_details.id
+JOIN genshin_profiles ON profile_chars.prof_id = genshin_profiles.id
 JOIN elements ON char_details.element_id = elements.id
-WHERE profile_chars.acc_id = $1
+WHERE profile_chars.prof_id = $1
 `
 
 type GetAllCharsFromProfileRow struct {
-	ProfileChar ProfileChar `json:"profile_char"`
-	CharDetail  CharDetail  `json:"char_detail"`
-	Element     Element     `json:"element"`
+	ProfileChar    ProfileChar    `json:"profile_char"`
+	CharDetail     CharDetail     `json:"char_detail"`
+	GenshinProfile GenshinProfile `json:"genshin_profile"`
+	Element        Element        `json:"element"`
 }
 
-func (q *Queries) GetAllCharsFromProfile(ctx context.Context, accID int64) ([]GetAllCharsFromProfileRow, error) {
-	rows, err := q.db.Query(ctx, getAllCharsFromProfile, accID)
+func (q *Queries) GetAllCharsFromProfile(ctx context.Context, profID int64) ([]GetAllCharsFromProfileRow, error) {
+	rows, err := q.db.Query(ctx, getAllCharsFromProfile, profID)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +391,7 @@ func (q *Queries) GetAllCharsFromProfile(ctx context.Context, accID int64) ([]Ge
 	for rows.Next() {
 		var i GetAllCharsFromProfileRow
 		if err := rows.Scan(
-			&i.ProfileChar.AccID,
+			&i.ProfileChar.ProfID,
 			&i.ProfileChar.CharID,
 			&i.ProfileChar.Level,
 			&i.ProfileChar.Constellation,
@@ -404,6 +407,11 @@ func (q *Queries) GetAllCharsFromProfile(ctx context.Context, accID int64) ([]Ge
 			&i.CharDetail.Notes,
 			&i.CharDetail.CreatedAt,
 			&i.CharDetail.UpdatedAt,
+			&i.GenshinProfile.ID,
+			&i.GenshinProfile.Name,
+			&i.GenshinProfile.Notes,
+			&i.GenshinProfile.CreatedAt,
+			&i.GenshinProfile.UpdatedAt,
 			&i.Element.ID,
 			&i.Element.Name,
 			&i.Element.IconUrl,
@@ -490,6 +498,17 @@ func (q *Queries) GetAllGenshinChars(ctx context.Context) ([]GetAllGenshinCharsR
 	return items, nil
 }
 
+const getElementIconByName = `-- name: GetElementIconByName :one
+SELECT icon_url from elements where name = $1
+`
+
+func (q *Queries) GetElementIconByName(ctx context.Context, name string) (pgtype.Text, error) {
+	row := q.db.QueryRow(ctx, getElementIconByName, name)
+	var icon_url pgtype.Text
+	err := row.Scan(&icon_url)
+	return icon_url, err
+}
+
 const getElementId = `-- name: GetElementId :one
 SELECT id from elements WHERE name = $1
 `
@@ -501,12 +520,48 @@ func (q *Queries) GetElementId(ctx context.Context, name string) (int16, error) 
 	return id, err
 }
 
-const getProfiles = `-- name: GetProfiles :one
+const getGenshinChar = `-- name: GetGenshinChar :one
+SELECT char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, elements.name as element_name
+FROM char_details
+JOIN elements ON elements.id = char_details.element_id
+WHERE char_details.id = $1
+`
+
+type GetGenshinCharRow struct {
+	ID          int64              `json:"id"`
+	Name        string             `json:"name"`
+	ElementID   int16              `json:"element_id"`
+	Stars       int16              `json:"stars"`
+	Icon        []byte             `json:"icon"`
+	Notes       pgtype.Text        `json:"notes"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ElementName string             `json:"element_name"`
+}
+
+func (q *Queries) GetGenshinChar(ctx context.Context, id int64) (GetGenshinCharRow, error) {
+	row := q.db.QueryRow(ctx, getGenshinChar, id)
+	var i GetGenshinCharRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ElementID,
+		&i.Stars,
+		&i.Icon,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ElementName,
+	)
+	return i, err
+}
+
+const getProfile = `-- name: GetProfile :one
 SELECT id, name, notes, created_at, updated_at FROM genshin_profiles WHERE id = $1
 `
 
-func (q *Queries) GetProfiles(ctx context.Context, id int64) (GenshinProfile, error) {
-	row := q.db.QueryRow(ctx, getProfiles, id)
+func (q *Queries) GetProfile(ctx context.Context, id int64) (GenshinProfile, error) {
+	row := q.db.QueryRow(ctx, getProfile, id)
 	var i GenshinProfile
 	err := row.Scan(
 		&i.ID,
@@ -516,4 +571,88 @@ func (q *Queries) GetProfiles(ctx context.Context, id int64) (GenshinProfile, er
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getProfileCharStats = `-- name: GetProfileCharStats :one
+SELECT
+    COUNT(pc.char_id)::INT AS total_characters
+FROM genshin_profiles gp
+LEFT JOIN profile_chars pc on gp.id = pc.prof_id
+LEFT JOIN char_details cd on cd.id = pc.char_id
+WHERE gp.id = $1
+GROUP BY gp.id
+`
+
+func (q *Queries) GetProfileCharStats(ctx context.Context, id int64) (int32, error) {
+	row := q.db.QueryRow(ctx, getProfileCharStats, id)
+	var total_characters int32
+	err := row.Scan(&total_characters)
+	return total_characters, err
+}
+
+const getProfileElementCounts = `-- name: GetProfileElementCounts :many
+SELECT
+    e.name AS element_name,
+    COUNT(pc.char_id)::INT AS char_count
+from profile_chars pc
+JOIN char_details cd ON pc.char_id = cd.id
+JOIN elements e ON cd.element_id = e.id
+WHERE pc.prof_id = $1
+GROUP BY e.id, e.name
+ORDER BY char_count DESC
+`
+
+type GetProfileElementCountsRow struct {
+	ElementName string `json:"element_name"`
+	CharCount   int32  `json:"char_count"`
+}
+
+func (q *Queries) GetProfileElementCounts(ctx context.Context, profID int64) ([]GetProfileElementCountsRow, error) {
+	rows, err := q.db.Query(ctx, getProfileElementCounts, profID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProfileElementCountsRow
+	for rows.Next() {
+		var i GetProfileElementCountsRow
+		if err := rows.Scan(&i.ElementName, &i.CharCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getProfiles = `-- name: GetProfiles :many
+SELECT id, name, notes, created_at, updated_at FROM genshin_profiles
+`
+
+func (q *Queries) GetProfiles(ctx context.Context) ([]GenshinProfile, error) {
+	rows, err := q.db.Query(ctx, getProfiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GenshinProfile
+	for rows.Next() {
+		var i GenshinProfile
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Notes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
