@@ -167,7 +167,10 @@ func (s *svc) GetAllCharsFromProfile(ctx context.Context, accID int64) (*Profile
 		char := CharacterResponse{
 			CharID:        r.ProfileChar.CharID,
 			Name:          r.CharDetail.Name,
+			DisplayName:   r.CharDetail.DisplayName.String,
 			Level:         r.ProfileChar.Level,
+			AscLevel:      r.ProfileChar.AscLevel,
+			Stars:         r.CharDetail.Stars,
 			Constellation: r.ProfileChar.Constellation,
 			TalentNa:      r.ProfileChar.TalentNa,
 			TalentE:       r.ProfileChar.TalentE,

@@ -26,7 +26,10 @@ type ProfileResponse struct {
 type CharacterResponse struct {
 	CharID        int64  `json:"char_id"`
 	Name          string `json:"name"`
+	DisplayName   string `json:"display_name"`
 	Level         int16  `json:"level"`
+	AscLevel      int16  `json:"asc_level"`
+	Stars         int16  `json:"stars"`
 	Constellation int16  `json:"constellation"`
 	TalentNa      int16  `json:"talent_na"`
 	TalentE       int16  `json:"talent_e"`

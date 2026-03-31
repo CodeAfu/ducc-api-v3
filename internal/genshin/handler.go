@@ -286,13 +286,9 @@ func (h *handler) DeleteCharFromProfile(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	var req repo.DeleteCharFromProfileParams
-	req.ProfID = profId
-	req.CharID = charId
-	if err := httputil.Read(r, &req); err != nil {
-		slog.Error("failed to read request from body", "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	req := repo.DeleteCharFromProfileParams{
+		ProfID: profId,
+		CharID: charId,
 	}
 	err := h.service.DeleteCharFromProfile(r.Context(), req)
 	if err != nil {

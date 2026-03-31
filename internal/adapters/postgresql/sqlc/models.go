@@ -24,14 +24,15 @@ type Bingo struct {
 }
 
 type CharDetail struct {
-	ID        int64              `json:"id"`
-	Name      string             `json:"name"`
-	ElementID int16              `json:"element_id"`
-	Stars     int16              `json:"stars"`
-	Icon      []byte             `json:"icon"`
-	Notes     pgtype.Text        `json:"notes"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID          int64              `json:"id"`
+	Name        string             `json:"name"`
+	ElementID   int16              `json:"element_id"`
+	Stars       int16              `json:"stars"`
+	Icon        []byte             `json:"icon"`
+	Notes       pgtype.Text        `json:"notes"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DisplayName pgtype.Text        `json:"display_name"`
 }
 
 type Element struct {
@@ -101,4 +102,5 @@ type ProfileChar struct {
 	TalentE       int16       `json:"talent_e"`
 	TalentQ       int16       `json:"talent_q"`
 	Notes         pgtype.Text `json:"notes"`
+	AscLevel      int16       `json:"asc_level"`
 }

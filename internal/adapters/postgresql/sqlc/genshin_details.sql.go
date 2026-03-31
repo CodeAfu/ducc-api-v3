@@ -18,17 +18,21 @@ WITH inserted AS (
         talent_na, talent_e, talent_q, notes
     ) VALUES (
         $1,
-        (SELECT id FROM char_details cd WHERE cd.name = $2),
-        $3, $4, $5, $6, $7, $8 
+        (SELECT id FROM char_details WHERE LOWER(name) = LOWER($2)),
+        $3, 
+        $4, 
+        $5, 
+        $6, 
+        $7, 
+        $8 
     )
-    RETURNING prof_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes
+    RETURNING prof_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes, asc_level
 )
 SELECT
-    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes,
-    char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at,
+    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, profile_chars.asc_level,
+    char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, char_details.display_name,
     elements.id, elements.name, elements.icon_url
-FROM inserted
-JOIN profile_chars ON profile_chars.prof_id = inserted.prof_id AND profile_chars.char_id = inserted.char_id
+FROM inserted profile_chars -- Alias the CTE result as the table name for sqlc
 JOIN char_details ON profile_chars.char_id = char_details.id
 JOIN elements ON char_details.element_id = elements.id
 `
@@ -71,6 +75,7 @@ func (q *Queries) AddCharToProfile(ctx context.Context, arg AddCharToProfilePara
 		&i.ProfileChar.TalentE,
 		&i.ProfileChar.TalentQ,
 		&i.ProfileChar.Notes,
+		&i.ProfileChar.AscLevel,
 		&i.CharDetail.ID,
 		&i.CharDetail.Name,
 		&i.CharDetail.ElementID,
@@ -79,6 +84,7 @@ func (q *Queries) AddCharToProfile(ctx context.Context, arg AddCharToProfilePara
 		&i.CharDetail.Notes,
 		&i.CharDetail.CreatedAt,
 		&i.CharDetail.UpdatedAt,
+		&i.CharDetail.DisplayName,
 		&i.Element.ID,
 		&i.Element.Name,
 		&i.Element.IconUrl,
@@ -88,21 +94,23 @@ func (q *Queries) AddCharToProfile(ctx context.Context, arg AddCharToProfilePara
 
 const createGenshinChar = `-- name: CreateGenshinChar :one
 WITH created AS (
-    INSERT INTO char_details (name, element_id, stars, icon, notes)
+    INSERT INTO char_details (name, display_name, element_id, stars, icon, notes)
     VALUES(
         $1,
-        (SELECT id FROM elements WHERE elements.name = $2),
-        $3, $4, $5
+        $2,
+        (SELECT id FROM elements WHERE elements.name = $3),
+        $4, $5, $6
     )
-    RETURNING id, name, element_id, stars, icon, notes, created_at, updated_at
+    RETURNING id, name, element_id, stars, icon, notes, created_at, updated_at, display_name
 )
-SELECT created.id, created.name, created.element_id, created.stars, created.icon, created.notes, created.created_at, created.updated_at, elements.name AS element_name
+SELECT created.id, created.name, created.element_id, created.stars, created.icon, created.notes, created.created_at, created.updated_at, created.display_name, elements.name AS element_name
 FROM created
 JOIN elements ON created.element_id = elements.id
 `
 
 type CreateGenshinCharParams struct {
 	Name        string      `json:"name"`
+	DisplayName pgtype.Text `json:"display_name"`
 	ElementName string      `json:"element_name"`
 	Stars       int16       `json:"stars"`
 	Icon        []byte      `json:"icon"`
@@ -118,12 +126,14 @@ type CreateGenshinCharRow struct {
 	Notes       pgtype.Text        `json:"notes"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DisplayName pgtype.Text        `json:"display_name"`
 	ElementName string             `json:"element_name"`
 }
 
 func (q *Queries) CreateGenshinChar(ctx context.Context, arg CreateGenshinCharParams) (CreateGenshinCharRow, error) {
 	row := q.db.QueryRow(ctx, createGenshinChar,
 		arg.Name,
+		arg.DisplayName,
 		arg.ElementName,
 		arg.Stars,
 		arg.Icon,
@@ -139,6 +149,7 @@ func (q *Queries) CreateGenshinChar(ctx context.Context, arg CreateGenshinCharPa
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayName,
 		&i.ElementName,
 	)
 	return i, err
@@ -203,14 +214,14 @@ const editCharFromProfile = `-- name: EditCharFromProfile :one
 WITH updated AS (
     UPDATE profile_chars
     SET
-        level = $3, constellation = $4, talent_na = $5,
-        talent_e = $6, talent_q = $7, notes = $8
+        level = $3, asc_level = $4, constellation = $5, talent_na = $6,
+        talent_e = $7, talent_q = $8, notes = $9
     WHERE profile_chars.prof_id = $1 AND profile_chars.char_id = $2
-    RETURNING prof_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes
+    RETURNING prof_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes, asc_level
 )
 SELECT
-    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes,
-    char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at,
+    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, profile_chars.asc_level,
+    char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, char_details.display_name,
     elements.id, elements.name, elements.icon_url
 FROM updated
 JOIN profile_chars ON profile_chars.prof_id = updated.prof_id AND profile_chars.char_id = updated.char_id
@@ -222,6 +233,7 @@ type EditCharFromProfileParams struct {
 	ProfID        int64       `json:"prof_id"`
 	CharID        int64       `json:"char_id"`
 	Level         int16       `json:"level"`
+	AscLevel      int16       `json:"asc_level"`
 	Constellation int16       `json:"constellation"`
 	TalentNa      int16       `json:"talent_na"`
 	TalentE       int16       `json:"talent_e"`
@@ -240,6 +252,7 @@ func (q *Queries) EditCharFromProfile(ctx context.Context, arg EditCharFromProfi
 		arg.ProfID,
 		arg.CharID,
 		arg.Level,
+		arg.AscLevel,
 		arg.Constellation,
 		arg.TalentNa,
 		arg.TalentE,
@@ -256,6 +269,7 @@ func (q *Queries) EditCharFromProfile(ctx context.Context, arg EditCharFromProfi
 		&i.ProfileChar.TalentE,
 		&i.ProfileChar.TalentQ,
 		&i.ProfileChar.Notes,
+		&i.ProfileChar.AscLevel,
 		&i.CharDetail.ID,
 		&i.CharDetail.Name,
 		&i.CharDetail.ElementID,
@@ -264,6 +278,7 @@ func (q *Queries) EditCharFromProfile(ctx context.Context, arg EditCharFromProfi
 		&i.CharDetail.Notes,
 		&i.CharDetail.CreatedAt,
 		&i.CharDetail.UpdatedAt,
+		&i.CharDetail.DisplayName,
 		&i.Element.ID,
 		&i.Element.Name,
 		&i.Element.IconUrl,
@@ -276,20 +291,22 @@ WITH edited AS (
     UPDATE char_details
     SET
         name = $1,
-        element_id = (SELECT id FROM elements WHERE elements.name = $2),
-        stars = $3,
-        icon = $4,
-        notes = $5
-    WHERE char_details.id = $6
-    RETURNING id, name, element_id, stars, icon, notes, created_at, updated_at
+        display_name = $2,
+        element_id = (SELECT id FROM elements WHERE elements.name = $3),
+        stars = $4,
+        icon = $5,
+        notes = $6
+    WHERE char_details.id = $7
+    RETURNING id, name, element_id, stars, icon, notes, created_at, updated_at, display_name
 )
-SELECT edited.id, edited.name, edited.element_id, edited.stars, edited.icon, edited.notes, edited.created_at, edited.updated_at, elements.name AS element_name
+SELECT edited.id, edited.name, edited.element_id, edited.stars, edited.icon, edited.notes, edited.created_at, edited.updated_at, edited.display_name, elements.name AS element_name
 from edited
 JOIN elements ON edited.element_id = elements.id
 `
 
 type EditGenshinCharParams struct {
 	Name        string      `json:"name"`
+	DisplayName pgtype.Text `json:"display_name"`
 	ElementName string      `json:"element_name"`
 	Stars       int16       `json:"stars"`
 	Icon        []byte      `json:"icon"`
@@ -306,12 +323,14 @@ type EditGenshinCharRow struct {
 	Notes       pgtype.Text        `json:"notes"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DisplayName pgtype.Text        `json:"display_name"`
 	ElementName string             `json:"element_name"`
 }
 
 func (q *Queries) EditGenshinChar(ctx context.Context, arg EditGenshinCharParams) (EditGenshinCharRow, error) {
 	row := q.db.QueryRow(ctx, editGenshinChar,
 		arg.Name,
+		arg.DisplayName,
 		arg.ElementName,
 		arg.Stars,
 		arg.Icon,
@@ -328,6 +347,7 @@ func (q *Queries) EditGenshinChar(ctx context.Context, arg EditGenshinCharParams
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayName,
 		&i.ElementName,
 	)
 	return i, err
@@ -363,8 +383,8 @@ func (q *Queries) EditGenshinProfile(ctx context.Context, arg EditGenshinProfile
 
 const getAllCharsFromProfile = `-- name: GetAllCharsFromProfile :many
 SELECT
-    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, 
-    char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, 
+    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, profile_chars.asc_level, 
+    char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, char_details.display_name, 
     genshin_profiles.id, genshin_profiles.name, genshin_profiles.notes, genshin_profiles.created_at, genshin_profiles.updated_at,
     elements.id, elements.name, elements.icon_url
 FROM profile_chars
@@ -399,6 +419,7 @@ func (q *Queries) GetAllCharsFromProfile(ctx context.Context, profID int64) ([]G
 			&i.ProfileChar.TalentE,
 			&i.ProfileChar.TalentQ,
 			&i.ProfileChar.Notes,
+			&i.ProfileChar.AscLevel,
 			&i.CharDetail.ID,
 			&i.CharDetail.Name,
 			&i.CharDetail.ElementID,
@@ -407,6 +428,7 @@ func (q *Queries) GetAllCharsFromProfile(ctx context.Context, profID int64) ([]G
 			&i.CharDetail.Notes,
 			&i.CharDetail.CreatedAt,
 			&i.CharDetail.UpdatedAt,
+			&i.CharDetail.DisplayName,
 			&i.GenshinProfile.ID,
 			&i.GenshinProfile.Name,
 			&i.GenshinProfile.Notes,
@@ -451,7 +473,7 @@ func (q *Queries) GetAllElements(ctx context.Context) ([]Element, error) {
 }
 
 const getAllGenshinChars = `-- name: GetAllGenshinChars :many
-SELECT char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, elements.name AS element_name
+SELECT char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, char_details.display_name, elements.name AS element_name
 FROM char_details
 JOIN elements ON char_details.element_id = elements.id
 `
@@ -465,6 +487,7 @@ type GetAllGenshinCharsRow struct {
 	Notes       pgtype.Text        `json:"notes"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DisplayName pgtype.Text        `json:"display_name"`
 	ElementName string             `json:"element_name"`
 }
 
@@ -486,6 +509,7 @@ func (q *Queries) GetAllGenshinChars(ctx context.Context) ([]GetAllGenshinCharsR
 			&i.Notes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DisplayName,
 			&i.ElementName,
 		); err != nil {
 			return nil, err
@@ -521,7 +545,7 @@ func (q *Queries) GetElementId(ctx context.Context, name string) (int16, error) 
 }
 
 const getGenshinChar = `-- name: GetGenshinChar :one
-SELECT char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, elements.name as element_name
+SELECT char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, char_details.display_name, elements.name as element_name
 FROM char_details
 JOIN elements ON elements.id = char_details.element_id
 WHERE char_details.id = $1
@@ -536,6 +560,7 @@ type GetGenshinCharRow struct {
 	Notes       pgtype.Text        `json:"notes"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DisplayName pgtype.Text        `json:"display_name"`
 	ElementName string             `json:"element_name"`
 }
 
@@ -551,6 +576,7 @@ func (q *Queries) GetGenshinChar(ctx context.Context, id int64) (GetGenshinCharR
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayName,
 		&i.ElementName,
 	)
 	return i, err

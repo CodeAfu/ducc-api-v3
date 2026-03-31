@@ -32,9 +32,10 @@ WHERE char_details.id = $1;
 
 -- name: CreateGenshinChar :one
 WITH created AS (
-    INSERT INTO char_details (name, element_id, stars, icon, notes)
+    INSERT INTO char_details (name, display_name, element_id, stars, icon, notes)
     VALUES(
         sqlc.arg(name),
+        sqlc.narg(display_name),
         (SELECT id FROM elements WHERE elements.name = sqlc.arg(element_name)),
         sqlc.arg(stars), sqlc.arg(icon), sqlc.arg(notes)
     )
@@ -49,6 +50,7 @@ WITH edited AS (
     UPDATE char_details
     SET
         name = sqlc.arg(name),
+        display_name = sqlc.narg(display_name),
         element_id = (SELECT id FROM elements WHERE elements.name = sqlc.arg(element_name)),
         stars = sqlc.arg(stars),
         icon = sqlc.arg(icon),
@@ -83,8 +85,13 @@ WITH inserted AS (
         talent_na, talent_e, talent_q, notes
     ) VALUES (
         sqlc.arg(prof_id),
-        (SELECT id FROM char_details cd WHERE cd.name = sqlc.arg(char_name)),
-        sqlc.arg(level), sqlc.arg(constellation), sqlc.arg(talent_na), sqlc.arg(talent_e), sqlc.arg(talent_q), sqlc.arg(notes) 
+        (SELECT id FROM char_details WHERE LOWER(name) = LOWER(sqlc.arg(char_name))),
+        sqlc.arg(level), 
+        sqlc.arg(constellation), 
+        sqlc.arg(talent_na), 
+        sqlc.arg(talent_e), 
+        sqlc.arg(talent_q), 
+        sqlc.arg(notes) 
     )
     RETURNING *
 )
@@ -92,8 +99,7 @@ SELECT
     sqlc.embed(profile_chars),
     sqlc.embed(char_details),
     sqlc.embed(elements)
-FROM inserted
-JOIN profile_chars ON profile_chars.prof_id = inserted.prof_id AND profile_chars.char_id = inserted.char_id
+FROM inserted profile_chars -- Alias the CTE result as the table name for sqlc
 JOIN char_details ON profile_chars.char_id = char_details.id
 JOIN elements ON char_details.element_id = elements.id;
 
@@ -101,8 +107,8 @@ JOIN elements ON char_details.element_id = elements.id;
 WITH updated AS (
     UPDATE profile_chars
     SET
-        level = $3, constellation = $4, talent_na = $5,
-        talent_e = $6, talent_q = $7, notes = $8
+        level = $3, asc_level = $4, constellation = $5, talent_na = $6,
+        talent_e = $7, talent_q = $8, notes = $9
     WHERE profile_chars.prof_id = $1 AND profile_chars.char_id = $2
     RETURNING *
 )
