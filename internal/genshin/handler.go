@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -227,10 +228,14 @@ func (h *handler) DeleteGenshinProfile(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) AddCharToProfile(w http.ResponseWriter, r *http.Request) {
 	profIdStr := chi.URLParam(r, "prof_id")
-	charName := chi.URLParam(r, "char_name")
 	profId, err := strconv.ParseInt(profIdStr, 10, 64)
 	if err != nil {
 		slog.Error("prof_id is not a valid integer", "err", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	charName, err := url.PathUnescape(chi.URLParam(r, "char_name"))
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -242,6 +247,7 @@ func (h *handler) AddCharToProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	req.ProfID = profId
 	req.CharName = charName
+	slog.Info("adding char", "prof_id", profId, "char_name", req.CharName)
 	resp, err := h.service.AddCharToProfile(r.Context(), req)
 	if err != nil {
 		slog.Error("failed to add character to profile", "err", err)
