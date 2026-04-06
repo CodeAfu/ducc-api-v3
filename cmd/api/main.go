@@ -9,7 +9,7 @@ import (
 	"time"
 
 	_ "github.com/CodeAfu/go-ducc-api/docs"
-	"github.com/CodeAfu/go-ducc-api/internal/env"
+	"github.com/CodeAfu/go-ducc-api/internal/adapters/env/envutils"
 	"github.com/clerk/clerk-sdk-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"

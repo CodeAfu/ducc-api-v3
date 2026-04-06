@@ -21,18 +21,18 @@
 
 ```bash
 # Build your struct from here
-curl -H "User-Agent: myapp/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=5" | jq '[.data.children[].data]'
+curl -H "User-Agent: ducc/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=5" | jq '[.data.children[].data]'
 
 # With pagination cursors 
-curl -H "User-Agent: myapp/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=5" | jq '{after: .data.after, before: .data.before, posts: [.data.children[].data]}'
+curl -H "User-Agent: ducc/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=5" | jq '{after: .data.after, before: .data.before, posts: [.data.children[].data]}'
 
 # Get last 100 posts
-curl -H "User-Agent: myapp/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=100" | jq '[.data.children[].data | {author, title, permalink}]'
+curl -H "User-Agent: ducc/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=100" | jq '[.data.children[].data | {author, title, permalink}]'
 
 # Find author from results
-curl -H "User-Agent: myapp/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=200" | jq '[.data.children[].data | select(.author == "SF-Uberman") | {author, title, permalink}]'
+curl -H "User-Agent: ducc/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=200" | jq '[.data.children[].data | select(.author == "SF-Uberman") | {author, title, permalink}]'
 
 # Query next page (get more than 100, its pagination)
-curl -H "User-Agent: myapp/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=100" | jq '.data.after'
-curl -H "User-Agent: myapp/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=100&after=t3_XXXXX" | jq '[.data.children[].data]'
+curl -H "User-Agent: ducc/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=100" | jq '.data.after'
+curl -H "User-Agent: ducc/0.1" "https://www.reddit.com/r/Genshin_Impact/new.json?limit=100&after=t3_XXXXX" | jq '[.data.children[].data]'
 ```

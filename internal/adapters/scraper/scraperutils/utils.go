@@ -1,4 +1,4 @@
-package hylscraper
+package scraperutils
 
 import "context"
 

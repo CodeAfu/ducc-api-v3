@@ -82,7 +82,9 @@ WHERE profile_chars.prof_id = $1;
 WITH inserted AS (
     INSERT INTO profile_chars (
         prof_id, char_id, level, constellation,
-        talent_na, talent_e, talent_q, notes
+        talent_na, talent_e, talent_q,
+        talent_na_boosted, talent_e_boosted, talent_q_boosted,
+        notes
     ) VALUES (
         sqlc.arg(prof_id),
         (SELECT id FROM char_details WHERE LOWER(name) = LOWER(sqlc.arg(char_name))),
@@ -91,7 +93,10 @@ WITH inserted AS (
         sqlc.arg(talent_na), 
         sqlc.arg(talent_e), 
         sqlc.arg(talent_q), 
-        sqlc.arg(notes) 
+        sqlc.narg(talent_na_boosted), 
+        sqlc.narg(talent_e_boosted), 
+        sqlc.narg(talent_q_boosted), 
+        sqlc.narg(notes) 
     )
     RETURNING *
 )
@@ -107,8 +112,9 @@ JOIN elements ON char_details.element_id = elements.id;
 WITH updated AS (
     UPDATE profile_chars
     SET
-        level = $3, asc_level = $4, constellation = $5, talent_na = $6,
-        talent_e = $7, talent_q = $8, notes = $9
+        level = $3, asc_level = $4, constellation = $5,
+        talent_na = $6, talent_e = $7, talent_q = $8, 
+        talent_na_boosted = $9, talent_e_boosted = $10, talent_q_boosted = $11, notes = $12
     WHERE profile_chars.prof_id = $1 AND profile_chars.char_id = $2
     RETURNING *
 )

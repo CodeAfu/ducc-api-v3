@@ -15,7 +15,9 @@ const addCharToProfile = `-- name: AddCharToProfile :one
 WITH inserted AS (
     INSERT INTO profile_chars (
         prof_id, char_id, level, constellation,
-        talent_na, talent_e, talent_q, notes
+        talent_na, talent_e, talent_q,
+        talent_na_boosted, talent_e_boosted, talent_q_boosted,
+        notes
     ) VALUES (
         $1,
         (SELECT id FROM char_details WHERE LOWER(name) = LOWER($2)),
@@ -24,12 +26,15 @@ WITH inserted AS (
         $5, 
         $6, 
         $7, 
-        $8 
+        $8, 
+        $9, 
+        $10, 
+        $11 
     )
-    RETURNING prof_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes, asc_level
+    RETURNING prof_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes, asc_level, talent_na_boosted, talent_e_boosted, talent_q_boosted
 )
 SELECT
-    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, profile_chars.asc_level,
+    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, profile_chars.asc_level, profile_chars.talent_na_boosted, profile_chars.talent_e_boosted, profile_chars.talent_q_boosted,
     char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, char_details.display_name,
     elements.id, elements.name, elements.icon_url
 FROM inserted profile_chars -- Alias the CTE result as the table name for sqlc
@@ -38,14 +43,17 @@ JOIN elements ON char_details.element_id = elements.id
 `
 
 type AddCharToProfileParams struct {
-	ProfID        int64       `json:"prof_id"`
-	CharName      string      `json:"char_name"`
-	Level         int16       `json:"level"`
-	Constellation int16       `json:"constellation"`
-	TalentNa      int16       `json:"talent_na"`
-	TalentE       int16       `json:"talent_e"`
-	TalentQ       int16       `json:"talent_q"`
-	Notes         pgtype.Text `json:"notes"`
+	ProfID          int64       `json:"prof_id"`
+	CharName        string      `json:"char_name"`
+	Level           int16       `json:"level"`
+	Constellation   int16       `json:"constellation"`
+	TalentNa        int16       `json:"talent_na"`
+	TalentE         int16       `json:"talent_e"`
+	TalentQ         int16       `json:"talent_q"`
+	TalentNaBoosted pgtype.Bool `json:"talent_na_boosted"`
+	TalentEBoosted  pgtype.Bool `json:"talent_e_boosted"`
+	TalentQBoosted  pgtype.Bool `json:"talent_q_boosted"`
+	Notes           pgtype.Text `json:"notes"`
 }
 
 type AddCharToProfileRow struct {
@@ -63,6 +71,9 @@ func (q *Queries) AddCharToProfile(ctx context.Context, arg AddCharToProfilePara
 		arg.TalentNa,
 		arg.TalentE,
 		arg.TalentQ,
+		arg.TalentNaBoosted,
+		arg.TalentEBoosted,
+		arg.TalentQBoosted,
 		arg.Notes,
 	)
 	var i AddCharToProfileRow
@@ -76,6 +87,9 @@ func (q *Queries) AddCharToProfile(ctx context.Context, arg AddCharToProfilePara
 		&i.ProfileChar.TalentQ,
 		&i.ProfileChar.Notes,
 		&i.ProfileChar.AscLevel,
+		&i.ProfileChar.TalentNaBoosted,
+		&i.ProfileChar.TalentEBoosted,
+		&i.ProfileChar.TalentQBoosted,
 		&i.CharDetail.ID,
 		&i.CharDetail.Name,
 		&i.CharDetail.ElementID,
@@ -214,13 +228,14 @@ const editCharFromProfile = `-- name: EditCharFromProfile :one
 WITH updated AS (
     UPDATE profile_chars
     SET
-        level = $3, asc_level = $4, constellation = $5, talent_na = $6,
-        talent_e = $7, talent_q = $8, notes = $9
+        level = $3, asc_level = $4, constellation = $5,
+        talent_na = $6, talent_e = $7, talent_q = $8, 
+        talent_na_boosted = $9, talent_e_boosted = $10, talent_q_boosted = $11, notes = $12
     WHERE profile_chars.prof_id = $1 AND profile_chars.char_id = $2
-    RETURNING prof_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes, asc_level
+    RETURNING prof_id, char_id, level, constellation, talent_na, talent_e, talent_q, notes, asc_level, talent_na_boosted, talent_e_boosted, talent_q_boosted
 )
 SELECT
-    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, profile_chars.asc_level,
+    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, profile_chars.asc_level, profile_chars.talent_na_boosted, profile_chars.talent_e_boosted, profile_chars.talent_q_boosted,
     char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, char_details.display_name,
     elements.id, elements.name, elements.icon_url
 FROM updated
@@ -230,15 +245,18 @@ JOIN elements ON char_details.element_id = elements.id
 `
 
 type EditCharFromProfileParams struct {
-	ProfID        int64       `json:"prof_id"`
-	CharID        int64       `json:"char_id"`
-	Level         int16       `json:"level"`
-	AscLevel      int16       `json:"asc_level"`
-	Constellation int16       `json:"constellation"`
-	TalentNa      int16       `json:"talent_na"`
-	TalentE       int16       `json:"talent_e"`
-	TalentQ       int16       `json:"talent_q"`
-	Notes         pgtype.Text `json:"notes"`
+	ProfID          int64       `json:"prof_id"`
+	CharID          int64       `json:"char_id"`
+	Level           int16       `json:"level"`
+	AscLevel        int16       `json:"asc_level"`
+	Constellation   int16       `json:"constellation"`
+	TalentNa        int16       `json:"talent_na"`
+	TalentE         int16       `json:"talent_e"`
+	TalentQ         int16       `json:"talent_q"`
+	TalentNaBoosted bool        `json:"talent_na_boosted"`
+	TalentEBoosted  bool        `json:"talent_e_boosted"`
+	TalentQBoosted  bool        `json:"talent_q_boosted"`
+	Notes           pgtype.Text `json:"notes"`
 }
 
 type EditCharFromProfileRow struct {
@@ -257,6 +275,9 @@ func (q *Queries) EditCharFromProfile(ctx context.Context, arg EditCharFromProfi
 		arg.TalentNa,
 		arg.TalentE,
 		arg.TalentQ,
+		arg.TalentNaBoosted,
+		arg.TalentEBoosted,
+		arg.TalentQBoosted,
 		arg.Notes,
 	)
 	var i EditCharFromProfileRow
@@ -270,6 +291,9 @@ func (q *Queries) EditCharFromProfile(ctx context.Context, arg EditCharFromProfi
 		&i.ProfileChar.TalentQ,
 		&i.ProfileChar.Notes,
 		&i.ProfileChar.AscLevel,
+		&i.ProfileChar.TalentNaBoosted,
+		&i.ProfileChar.TalentEBoosted,
+		&i.ProfileChar.TalentQBoosted,
 		&i.CharDetail.ID,
 		&i.CharDetail.Name,
 		&i.CharDetail.ElementID,
@@ -383,7 +407,7 @@ func (q *Queries) EditGenshinProfile(ctx context.Context, arg EditGenshinProfile
 
 const getAllCharsFromProfile = `-- name: GetAllCharsFromProfile :many
 SELECT
-    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, profile_chars.asc_level, 
+    profile_chars.prof_id, profile_chars.char_id, profile_chars.level, profile_chars.constellation, profile_chars.talent_na, profile_chars.talent_e, profile_chars.talent_q, profile_chars.notes, profile_chars.asc_level, profile_chars.talent_na_boosted, profile_chars.talent_e_boosted, profile_chars.talent_q_boosted, 
     char_details.id, char_details.name, char_details.element_id, char_details.stars, char_details.icon, char_details.notes, char_details.created_at, char_details.updated_at, char_details.display_name, 
     genshin_profiles.id, genshin_profiles.name, genshin_profiles.notes, genshin_profiles.created_at, genshin_profiles.updated_at,
     elements.id, elements.name, elements.icon_url
@@ -420,6 +444,9 @@ func (q *Queries) GetAllCharsFromProfile(ctx context.Context, profID int64) ([]G
 			&i.ProfileChar.TalentQ,
 			&i.ProfileChar.Notes,
 			&i.ProfileChar.AscLevel,
+			&i.ProfileChar.TalentNaBoosted,
+			&i.ProfileChar.TalentEBoosted,
+			&i.ProfileChar.TalentQBoosted,
 			&i.CharDetail.ID,
 			&i.CharDetail.Name,
 			&i.CharDetail.ElementID,

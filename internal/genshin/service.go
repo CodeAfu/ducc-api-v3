@@ -165,19 +165,22 @@ func (s *svc) GetAllCharsFromProfile(ctx context.Context, accID int64) (*Profile
 
 	for _, r := range rows {
 		char := CharacterResponse{
-			CharID:        r.ProfileChar.CharID,
-			Name:          r.CharDetail.Name,
-			DisplayName:   r.CharDetail.DisplayName.String,
-			Level:         r.ProfileChar.Level,
-			AscLevel:      r.ProfileChar.AscLevel,
-			Stars:         r.CharDetail.Stars,
-			Constellation: r.ProfileChar.Constellation,
-			TalentNa:      r.ProfileChar.TalentNa,
-			TalentE:       r.ProfileChar.TalentE,
-			TalentQ:       r.ProfileChar.TalentQ,
-			CharNotes:     r.ProfileChar.Notes.String,
-			ElementName:   r.Element.Name,
-			ElementIcon:   r.Element.IconUrl.String,
+			CharID:          r.ProfileChar.CharID,
+			Name:            r.CharDetail.Name,
+			DisplayName:     r.CharDetail.DisplayName.String,
+			Level:           r.ProfileChar.Level,
+			AscLevel:        r.ProfileChar.AscLevel,
+			Stars:           r.CharDetail.Stars,
+			Constellation:   r.ProfileChar.Constellation,
+			TalentNa:        r.ProfileChar.TalentNa,
+			TalentE:         r.ProfileChar.TalentE,
+			TalentQ:         r.ProfileChar.TalentQ,
+			TalentNaBoosted: r.ProfileChar.TalentNaBoosted,
+			TalentEBoosted:  r.ProfileChar.TalentEBoosted,
+			TalentQBoosted:  r.ProfileChar.TalentQBoosted,
+			CharNotes:       r.ProfileChar.Notes.String,
+			ElementName:     r.Element.Name,
+			ElementIcon:     r.Element.IconUrl.String,
 		}
 		res.Characters = append(res.Characters, char)
 	}

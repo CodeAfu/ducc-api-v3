@@ -94,13 +94,48 @@ type Image struct {
 }
 
 type ProfileChar struct {
-	ProfID        int64       `json:"prof_id"`
-	CharID        int64       `json:"char_id"`
-	Level         int16       `json:"level"`
-	Constellation int16       `json:"constellation"`
-	TalentNa      int16       `json:"talent_na"`
-	TalentE       int16       `json:"talent_e"`
-	TalentQ       int16       `json:"talent_q"`
-	Notes         pgtype.Text `json:"notes"`
-	AscLevel      int16       `json:"asc_level"`
+	ProfID          int64       `json:"prof_id"`
+	CharID          int64       `json:"char_id"`
+	Level           int16       `json:"level"`
+	Constellation   int16       `json:"constellation"`
+	TalentNa        int16       `json:"talent_na"`
+	TalentE         int16       `json:"talent_e"`
+	TalentQ         int16       `json:"talent_q"`
+	Notes           pgtype.Text `json:"notes"`
+	AscLevel        int16       `json:"asc_level"`
+	TalentNaBoosted bool        `json:"talent_na_boosted"`
+	TalentEBoosted  bool        `json:"talent_e_boosted"`
+	TalentQBoosted  bool        `json:"talent_q_boosted"`
+}
+
+type RedditComment struct {
+	ID              int64              `json:"id"`
+	SessionID       int64              `json:"session_id"`
+	PostID          int64              `json:"post_id"`
+	ParentCommentID pgtype.Int8        `json:"parent_comment_id"`
+	Url             string             `json:"url"`
+	Author          string             `json:"author"`
+	Content         string             `json:"content"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RedditPost struct {
+	ID        int64              `json:"id"`
+	SessionID int64              `json:"session_id"`
+	Url       string             `json:"url"`
+	Author    string             `json:"author"`
+	Title     string             `json:"title"`
+	Content   string             `json:"content"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RedditScrapeSession struct {
+	ID             int64              `json:"id"`
+	Target         string             `json:"target"`
+	CreatedByEmail string             `json:"created_by_email"`
+	Description    pgtype.Text        `json:"description"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }

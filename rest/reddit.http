@@ -1,0 +1,3 @@
+### SSE Event
+
+GET http://localhost:8088/api/v3/redditscraper/scrape HTTP/1.1

@@ -10,6 +10,7 @@ import (
 	"github.com/CodeAfu/go-ducc-api/internal/genshin"
 	"github.com/CodeAfu/go-ducc-api/internal/hylscraper"
 	"github.com/CodeAfu/go-ducc-api/internal/image"
+	"github.com/CodeAfu/go-ducc-api/internal/redditscraper"
 	clerkhttp "github.com/clerk/clerk-sdk-go/v2/http"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -86,6 +87,11 @@ func (app *application) mount() http.Handler {
 	hylscraperHandler := hylscraper.NewHandler(hylscraperService)
 	r.Get("/api/v3/hylscraper", hylscraperHandler.Scrape)
 
+	// Reddit Scraper
+	redditscraperService := redditscraper.NewService(repo.New(app.db), app.db)
+	redditscraperHandler := redditscraper.NewHandler(redditscraperService)
+	r.Get("/api/v3/redditscraper/scrape", redditscraperHandler.Scrape)
+
 	// Genshin Impact
 	genshinService := genshin.NewService(repo.New(app.db), app.db)
 	genshinHandler := genshin.NewHandler(genshinService)
@@ -94,25 +100,23 @@ func (app *application) mount() http.Handler {
 	r.Get("/api/v3/genshin/elements", genshinHandler.GetAllElements)
 	r.Get("/api/v3/genshin/elements/{element}/icon", genshinHandler.GetElementIconByName)
 	r.Get("/api/v3/genshin/elements/id", genshinHandler.GetElementId)
-	// --- TODO: move to protected group
-	r.Get("/api/v3/genshin/profiles", genshinHandler.GetProfiles)
-	r.Get("/api/v3/genshin/profiles/{id}", genshinHandler.GetProfile)
-	r.Post("/api/v3/genshin/profiles", genshinHandler.CreateGenshinProfile)
-	r.Put("/api/v3/genshin/profiles/{id}", genshinHandler.EditGenshinProfile)
-	r.Delete("/api/v3/genshin/profiles/{id}", genshinHandler.DeleteGenshinProfile)
-
-	r.Post("/api/v3/genshin/characters", genshinHandler.AddGenshinChar)
-	r.Put("/api/v3/genshin/characters/{id}", genshinHandler.EditGenshinChar)
-	r.Delete("/api/v3/genshin/characters/{id}", genshinHandler.DeleteGenshinChar)
-
-	r.Get("/api/v3/genshin/profiles/{id}/characters", genshinHandler.GetAllCharsFromProfile)
-	r.Post("/api/v3/genshin/profiles/{prof_id}/{char_name}", genshinHandler.AddCharToProfile)
-	r.Put("/api/v3/genshin/profiles/{prof_id}/{char_id}", genshinHandler.EditCharFromProfile)
-	r.Delete("/api/v3/genshin/profiles/{prof_id}/{char_id}", genshinHandler.DeleteCharFromProfile)
-	r.Get("/api/v3/genshin/profiles/{id}/stats", genshinHandler.GetProfileStats)
-	// ---
 	r.Group(func(r chi.Router) {
 		r.Use(clerkhttp.RequireHeaderAuthorization())
+		r.Get("/api/v3/genshin/profiles", genshinHandler.GetProfiles)
+		r.Get("/api/v3/genshin/profiles/{id}", genshinHandler.GetProfile)
+		r.Post("/api/v3/genshin/profiles", genshinHandler.CreateGenshinProfile)
+		r.Put("/api/v3/genshin/profiles/{id}", genshinHandler.EditGenshinProfile)
+		r.Delete("/api/v3/genshin/profiles/{id}", genshinHandler.DeleteGenshinProfile)
+
+		r.Post("/api/v3/genshin/characters", genshinHandler.AddGenshinChar)
+		r.Put("/api/v3/genshin/characters/{id}", genshinHandler.EditGenshinChar)
+		r.Delete("/api/v3/genshin/characters/{id}", genshinHandler.DeleteGenshinChar)
+
+		r.Get("/api/v3/genshin/profiles/{id}/characters", genshinHandler.GetAllCharsFromProfile)
+		r.Post("/api/v3/genshin/profiles/{prof_id}/{char_name}", genshinHandler.AddCharToProfile)
+		r.Put("/api/v3/genshin/profiles/{prof_id}/{char_id}", genshinHandler.EditCharFromProfile)
+		r.Delete("/api/v3/genshin/profiles/{prof_id}/{char_id}", genshinHandler.DeleteCharFromProfile)
+		r.Get("/api/v3/genshin/profiles/{id}/stats", genshinHandler.GetProfileStats)
 	})
 
 	return r

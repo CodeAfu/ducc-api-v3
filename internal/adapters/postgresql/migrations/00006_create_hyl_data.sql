@@ -1,6 +1,6 @@
 -- +goose Up
 -- +goose StatementBegin
-CREATE TABLE hyl_scrape_session (
+CREATE TABLE IF NOT EXISTS hyl_scrape_session (
     id BIGSERIAL PRIMARY KEY,
     target TEXT NOT NULL,
     created_by_email TEXT NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE hyl_scrape_session (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE hyl_posts (
+CREATE TABLE IF NOT EXISTS hyl_posts (
     id BIGSERIAL PRIMARY KEY,
     session_id BIGINT NOT NULL REFERENCES hyl_scrape_session(id) ON DELETE CASCADE,
     url TEXT UNIQUE NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE hyl_posts (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE hyl_comments (
+CREATE TABLE IF NOT EXISTS hyl_comments (
     id BIGSERIAL PRIMARY KEY,    
     session_id BIGINT NOT NULL REFERENCES hyl_scrape_session(id) ON DELETE CASCADE,
     post_id BIGINT NOT NULL REFERENCES hyl_posts(id) ON DELETE CASCADE,
@@ -35,7 +35,7 @@ CREATE TABLE hyl_comments (
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TABLE hyl_comments;
-DROP TABLE hyl_posts;
-DROP TABLE hyl_scrape_session;
+DROP TABLE IF EXISTS hyl_comments;
+DROP TABLE IF EXISTS hyl_posts;
+DROP TABLE IF EXISTS hyl_scrape_session;
 -- +goose StatementEnd
