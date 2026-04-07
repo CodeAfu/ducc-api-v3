@@ -42,37 +42,24 @@ func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
-	slog.Info("reddit scraper event triggered", "path", r.URL.Path)
+
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute*8)
 	defer cancel()
 
-	redditPosts, err := h.service.GetLinks(ctx, "Genshin_Impact", limit)
+	// redditPosts, err := h.service.GetLinks(ctx, "Genshin_Impact", limit)
+	results, err := h.service.ScrapeAndStore(ctx, "Genshin_Impact", limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	ticker := time.NewTicker(time.Second)
-	start := time.Now()
-	for range 1 {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			jsonData, err := json.Marshal(redditPosts)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("error while marshaling data to json", err.Error()), http.StatusInternalServerError)
-				return
-			}
-			_, err = fmt.Fprintf(w, "data: %s\n\n", jsonData)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("error occurred while attemping to stream: %s", err.Error()), http.StatusInternalServerError)
-				return
-			}
-			flusher.Flush()
-			slog.Info("scraper status",
-				"time_elapsed", fmt.Sprintf("%.4fs", time.Since(start).Seconds()),
-			)
+	for result := range results {
+		if result.Err != nil {
+			slog.Warn("scrape failed", "url", result.Post.URL, "err", result.Err)
+			continue
 		}
+		jsonData, _ := json.Marshal(result)
+		fmt.Fprintf(w, "data: &s\n\n", jsonData)
+		flusher.Flush()
 	}
 }

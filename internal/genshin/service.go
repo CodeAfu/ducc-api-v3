@@ -189,7 +189,28 @@ func (s *svc) GetAllCharsFromProfile(ctx context.Context, accID int64) (*Profile
 }
 
 func (s *svc) CreateGenshinProfile(ctx context.Context, arg repo.CreateGenshinProfileParams) (repo.GenshinProfile, error) {
-	return s.repo.CreateGenshinProfile(ctx, arg)
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return repo.GenshinProfile{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	qtx := s.repo.WithTx(tx)
+
+	profile, err := qtx.CreateGenshinProfile(ctx, arg)
+	if err != nil {
+		return repo.GenshinProfile{}, err
+	}
+
+	mcs := seedMcsForNewProfile(profile)
+	for _, mc := range mcs {
+		_, err := qtx.AddCharToProfile(ctx, mc)
+		if err != nil {
+			return repo.GenshinProfile{}, err
+		}
+	}
+
+	return profile, tx.Commit(ctx)
 }
 
 func (s *svc) EditGenshinProfile(ctx context.Context, req editGenshinProfileRequest) (repo.GenshinProfile, error) {
@@ -298,4 +319,100 @@ func (s *svc) GetProfileStats(ctx context.Context, profID int64) (profileStatsRe
 		ElementCounts: mappedStats,
 	}
 	return res, nil
+}
+
+func seedMcsForNewProfile(profile repo.GenshinProfile) []repo.AddCharToProfileParams {
+	return []repo.AddCharToProfileParams{
+		{
+			ProfID:          profile.ID,
+			CharName:        "Traveler (Pyro)",
+			Level:           1,
+			Constellation:   0,
+			TalentNa:        1,
+			TalentE:         1,
+			TalentQ:         1,
+			TalentNaBoosted: pgtype.Bool{Bool: false, Valid: true},
+			TalentEBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			TalentQBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			Notes:           pgtype.Text{String: "", Valid: true},
+		},
+		{
+			ProfID:          profile.ID,
+			CharName:        "Traveler (Hydro)",
+			Level:           1,
+			Constellation:   0,
+			TalentNa:        1,
+			TalentE:         1,
+			TalentQ:         1,
+			TalentNaBoosted: pgtype.Bool{Bool: false, Valid: true},
+			TalentEBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			TalentQBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			Notes:           pgtype.Text{String: "", Valid: true},
+		},
+		{
+			ProfID:          profile.ID,
+			CharName:        "Traveler (Electro)",
+			Level:           1,
+			Constellation:   0,
+			TalentNa:        1,
+			TalentE:         1,
+			TalentQ:         1,
+			TalentNaBoosted: pgtype.Bool{Bool: false, Valid: true},
+			TalentEBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			TalentQBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			Notes:           pgtype.Text{String: "", Valid: true},
+		},
+		{
+			ProfID:          profile.ID,
+			CharName:        "Traveler (Cryo)",
+			Level:           1,
+			Constellation:   0,
+			TalentNa:        1,
+			TalentE:         1,
+			TalentQ:         1,
+			TalentNaBoosted: pgtype.Bool{Bool: false, Valid: true},
+			TalentEBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			TalentQBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			Notes:           pgtype.Text{String: "", Valid: true},
+		},
+		{
+			ProfID:          profile.ID,
+			CharName:        "Traveler (Geo)",
+			Level:           1,
+			Constellation:   0,
+			TalentNa:        1,
+			TalentE:         1,
+			TalentQ:         1,
+			TalentNaBoosted: pgtype.Bool{Bool: false, Valid: true},
+			TalentEBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			TalentQBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			Notes:           pgtype.Text{String: "", Valid: true},
+		},
+		{
+			ProfID:          profile.ID,
+			CharName:        "Traveler (Anemo)",
+			Level:           1,
+			Constellation:   0,
+			TalentNa:        1,
+			TalentE:         1,
+			TalentQ:         1,
+			TalentNaBoosted: pgtype.Bool{Bool: false, Valid: true},
+			TalentEBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			TalentQBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			Notes:           pgtype.Text{String: "", Valid: true},
+		},
+		{
+			ProfID:          profile.ID,
+			CharName:        "Traveler (Dendro)",
+			Level:           1,
+			Constellation:   0,
+			TalentNa:        1,
+			TalentE:         1,
+			TalentQ:         1,
+			TalentNaBoosted: pgtype.Bool{Bool: false, Valid: true},
+			TalentEBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			TalentQBoosted:  pgtype.Bool{Bool: false, Valid: true},
+			Notes:           pgtype.Text{String: "", Valid: true},
+		},
+	}
 }

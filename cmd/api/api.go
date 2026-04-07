@@ -2,6 +2,7 @@ package main
 
 import (
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/go-chi/httprate"
 	"github.com/jackc/pgx/v5/pgxpool"
 	httpSwagger "github.com/swaggo/http-swagger"
+	"google.golang.org/grpc"
 )
 
 // mount
@@ -133,6 +135,15 @@ func (app *application) run(h http.Handler) error {
 	srv.SetKeepAlivesEnabled(true)
 	slog.Info("server started", "addr", app.config.addr)
 	return srv.ListenAndServe()
+}
+
+func (app *application) runGRPC() error {
+	lis, err := net.Listen("tcp", ":9090")
+	if err != nil {
+		return err
+	}
+	s := grpc.NewServer()
+	return s.Serve(lis)
 }
 
 func slogLogger(next http.Handler) http.Handler {

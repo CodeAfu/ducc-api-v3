@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/CodeAfu/go-ducc-api/internal/adapters/env/envutils"
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
-	"github.com/CodeAfu/go-ducc-api/internal/env"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"

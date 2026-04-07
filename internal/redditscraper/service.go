@@ -4,32 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
+	"github.com/CodeAfu/go-ducc-api/internal/adapters/scraper/scraperutils"
+	"github.com/chromedp/chromedp"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type RedditPost struct {
-	Title       string  `json:"title"`
-	Author      string  `json:"author"`
-	URL         string  `json:"url"`
-	Selftext    string  `json:"selftext"`
-	Created     float64 `json:"created_utc"`
-	NumComments int     `json:"num_comments"`
-}
-
-type redditResponse struct {
-	Data struct {
-		Children []struct {
-			Data RedditPost `json:"data"`
-		} `json:"children"`
-	} `json:"data"`
-}
-
 type Service interface {
-	GetLinks(context.Context, string, int) ([]RedditPost, error)
+	GetLinks(ctx context.Context, subreddit string, limit int) ([]RedditPost, error)
+	ScrapeAndStore(ctx context.Context, subreddit string, limit int) (<-chan ScrapeResult, error)
 }
 
 type svc struct {
@@ -48,6 +35,7 @@ func (s *svc) GetLinks(ctx context.Context, subreddit string, lim int) ([]Reddit
 	ctx, cancel := context.WithTimeout(ctx, time.Second*90)
 	defer cancel()
 
+	slog.Debug("scraper session started")
 	uri := fmt.Sprintf("https://www.reddit.com/r/%s/new.json?limit=%d", subreddit, lim)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
 	if err != nil {
@@ -76,5 +64,54 @@ func (s *svc) GetLinks(ctx context.Context, subreddit string, lim int) ([]Reddit
 		posts[i] = child.Data
 	}
 
+	slog.Debug(fmt.Sprintf("retrieved %d links", lim))
 	return posts, nil
+}
+
+func (s *svc) ScrapeAndStore(ctx context.Context, subreddit string, limit int) (<-chan ScrapeResult, error) {
+	slog.Debug("scraping post", "subreddit", subreddit)
+	posts, err := s.GetLinks(ctx, subreddit, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	// source channel
+	postStream := make(chan RedditPost, len(posts))
+	go func() {
+		defer close(postStream)
+		for _, p := range posts {
+			select {
+			case <-ctx.Done():
+				return
+			case postStream <- p:
+			}
+		}
+	}()
+
+	results := scraperutils.FanOut(ctx, postStream, 5, func(post RedditPost) ScrapeResult {
+		comments, err := scrapeComments(ctx, post.URL) // chromedp here
+		if err != nil {
+			return ScrapeResult{Post: post, Err: err}
+		}
+		// s.repo.SaveComments(ctx, ...) — your DB stuff
+		return ScrapeResult{Post: post, Comments: comments}
+	})
+
+	return results, nil
+}
+
+func scrapeComments(ctx context.Context, url string) ([]string, error) {
+	ctx, cancel := chromedp.NewContext(ctx)
+	defer cancel()
+
+	var comments []string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`[data-testid="comment"]`, chromedp.ByQuery),
+		chromedp.Evaluate(`
+			Array.from(document.querySelectorAll('[data-testid="comment"]'))
+				.map(el => el.innerText)
+		`, &comments),
+	)
+	return comments, err
 }
