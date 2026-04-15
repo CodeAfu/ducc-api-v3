@@ -41,7 +41,7 @@ func FanOut[T any, R any](ctx context.Context, input <-chan T, maxWorkers int, f
 
 	go func() {
 		defer close(out)
-		defer close(sem) // TODO: check if this is needed
+		// defer close(sem) // TODO: check if this is needed
 		var wg sync.WaitGroup
 
 		for item := range input {

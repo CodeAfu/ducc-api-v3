@@ -3,7 +3,7 @@ package redditscraper
 type RedditPost struct {
 	Title       string  `json:"title"`
 	Author      string  `json:"author"`
-	URL         string  `json:"url"`
+	Permalink   string  `json:"permalink"`
 	Selftext    string  `json:"selftext"`
 	Created     float64 `json:"created_utc"`
 	NumComments int     `json:"num_comments"`
@@ -17,8 +17,10 @@ type ScrapeResult struct {
 
 type redditResponse struct {
 	Data struct {
+		After    string `json:"after"`
 		Children []struct {
 			Data RedditPost `json:"data"`
 		} `json:"children"`
+		Before string `json:"before"`
 	} `json:"data"`
 }

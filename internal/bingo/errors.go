@@ -4,8 +4,8 @@ import (
 	"errors"
 )
 
-var ErrCellsNotJson = errors.New("cells not json")
-var ErrCellLenMismatch = errors.New("cells length incorrect (25)")
-var ErrInvalidCellKey = errors.New("invalid cell key")
-var ErrValueNotString = errors.New("cell value not string")
-var ErrBingoNotFound = errors.New("bingo card not found")
+var ErrCellsNotJson = errors.New("Cells not in JSON format")
+var ErrCellLenMismatch = errors.New("Cells array length is incorrect (max=25)")
+var ErrInvalidCellKey = errors.New("Invalid cell key")
+var ErrValueNotString = errors.New("Cell value is not of type string")
+var ErrBingoNotFound = errors.New("Bingo Card not found")

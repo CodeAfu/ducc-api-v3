@@ -25,6 +25,12 @@ func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
+	subreddit := r.URL.Query().Get("subreddit")
+	if subreddit == "" {
+		http.Error(w, "subreddit param is null", http.StatusBadRequest)
+		return
+	}
+
 	limitStr := r.URL.Query().Get("limit")
 	if limitStr == "" {
 		http.Error(w, "limit param is null", http.StatusBadRequest)
@@ -47,7 +53,7 @@ func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	// redditPosts, err := h.service.GetLinks(ctx, "Genshin_Impact", limit)
-	results, err := h.service.ScrapeAndStore(ctx, "Genshin_Impact", limit)
+	results, err := h.service.ScrapeAndStore(ctx, subreddit, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -55,7 +61,7 @@ func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
 
 	for result := range results {
 		if result.Err != nil {
-			slog.Warn("scrape failed", "url", result.Post.URL, "err", result.Err)
+			slog.Warn("scrape failed", "url", result.Post.Permalink, "err", result.Err)
 			continue
 		}
 		jsonData, _ := json.Marshal(result)

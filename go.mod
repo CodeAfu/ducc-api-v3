@@ -18,6 +18,7 @@ require (
 
 require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
+	github.com/capsolver/capsolver-go v0.0.0-20251204081438-e4e07af23eae // indirect
 	github.com/chromedp/cdproto v0.0.0-20260405000525-47a8ff65b46a // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
