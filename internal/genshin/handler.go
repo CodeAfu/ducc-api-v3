@@ -26,7 +26,9 @@ func NewHandler(s Service) *handler {
 }
 
 func (h *handler) GetAllChars(w http.ResponseWriter, r *http.Request) {
-	chars, err := h.service.GetAllGenshinChars(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	chars, err := h.service.GetAllGenshinChars(ctx)
 	if err != nil {
 		slog.Error("error while fetching genshin characters", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -40,11 +42,13 @@ func (h *handler) GetGenshinChar(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	char, err := h.service.GetGenshinChar(r.Context(), id)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	char, err := h.service.GetGenshinChar(ctx, id)
 	if err != nil {
 		slog.Error("error while fetching genshin character", "err", err, "id", id)
 		if errors.Is(err, ErrCharDoesNotExist) {
-			http.Error(w, "not found", http.StatusNotFound)
+			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -60,7 +64,9 @@ func (h *handler) AddGenshinChar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	char, err := h.service.CreateGenshinChar(r.Context(), req)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	char, err := h.service.CreateGenshinChar(ctx, req)
 	if err != nil {
 		slog.Error("failed to create genshin character", "err", err)
 		switch {
@@ -88,7 +94,9 @@ func (h *handler) EditGenshinChar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.ID = id
-	char, err := h.service.EditGenshinChar(r.Context(), req)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	char, err := h.service.EditGenshinChar(ctx, req)
 	if err != nil {
 		slog.Error("failed to edit genshin character", "err", err)
 		switch {
@@ -111,7 +119,9 @@ func (h *handler) DeleteGenshinChar(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.service.DeleteGenshinChar(r.Context(), id); err != nil {
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	if err := h.service.DeleteGenshinChar(ctx, id); err != nil {
 		slog.Error("failed edit delete genshin character", "err", err, "id", id)
 		switch {
 		case errors.Is(err, ErrCharDoesNotExist):
@@ -129,7 +139,9 @@ func (h *handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	prof, err := h.service.GetProfile(r.Context(), id)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	prof, err := h.service.GetProfile(ctx, id)
 	if err != nil {
 		slog.Error("error while fetching profile", "err", err, "id", id)
 		switch {
@@ -144,7 +156,9 @@ func (h *handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) GetProfiles(w http.ResponseWriter, r *http.Request) {
-	profs, err := h.service.GetProfiles(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	profs, err := h.service.GetProfiles(ctx)
 	if err != nil {
 		slog.Error("error while fetching profiles", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -166,7 +180,9 @@ func (h *handler) GetAllCharsFromProfile(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	prof, err := h.service.GetAllCharsFromProfile(r.Context(), id)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	prof, err := h.service.GetAllCharsFromProfile(ctx, id)
 	if err != nil {
 		slog.Error("failed to fetch characters from profile", "err", err, "account_id", id)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -182,7 +198,9 @@ func (h *handler) CreateGenshinProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	profile, err := h.service.CreateGenshinProfile(r.Context(), req)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	profile, err := h.service.CreateGenshinProfile(ctx, req)
 	if err != nil {
 		slog.Error("error while creating genshin profile", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -203,7 +221,9 @@ func (h *handler) EditGenshinProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.ID = id
-	profile, err := h.service.EditGenshinProfile(r.Context(), req)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	profile, err := h.service.EditGenshinProfile(ctx, req)
 	if err != nil {
 		slog.Error("error while editing genshin profile", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -217,7 +237,9 @@ func (h *handler) DeleteGenshinProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	err := h.service.DeleteGenshinProfile(r.Context(), id)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	err := h.service.DeleteGenshinProfile(ctx, id)
 	if err != nil {
 		slog.Error("failed to delete genshin character", "err", err, "id", id)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -248,7 +270,9 @@ func (h *handler) AddCharToProfile(w http.ResponseWriter, r *http.Request) {
 	req.ProfID = profId
 	req.CharName = charName
 	slog.Info("adding char", "prof_id", profId, "char_name", req.CharName)
-	resp, err := h.service.AddCharToProfile(r.Context(), req)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	resp, err := h.service.AddCharToProfile(ctx, req)
 	if err != nil {
 		slog.Error("failed to add character to profile", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -274,7 +298,9 @@ func (h *handler) EditCharFromProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	resp, err := h.service.EditCharFromProfile(r.Context(), req)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	resp, err := h.service.EditCharFromProfile(ctx, req)
 	if err != nil {
 		slog.Error("error occured while attempting to edit profile character", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -296,7 +322,9 @@ func (h *handler) DeleteCharFromProfile(w http.ResponseWriter, r *http.Request) 
 		ProfID: profId,
 		CharID: charId,
 	}
-	err := h.service.DeleteCharFromProfile(r.Context(), req)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	err := h.service.DeleteCharFromProfile(ctx, req)
 	if err != nil {
 		slog.Error("error occured while attempting to edit profile character", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -306,7 +334,9 @@ func (h *handler) DeleteCharFromProfile(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *handler) GetAllElements(w http.ResponseWriter, r *http.Request) {
-	elements, err := h.service.GetAllElements(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	elements, err := h.service.GetAllElements(ctx)
 	if err != nil {
 		slog.Error("error while fetching elements", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -351,7 +381,9 @@ func (h *handler) GetElementId(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "search param 'element' is missing", http.StatusBadRequest)
 		return
 	}
-	id, err := h.service.GetElementId(r.Context(), elementName)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	id, err := h.service.GetElementId(ctx, elementName)
 	if err != nil {
 		slog.Error("error while fetching elements", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -365,7 +397,9 @@ func (h *handler) GetProfileStats(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	stats, err := h.service.GetProfileStats(r.Context(), id)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
+	defer cancel()
+	stats, err := h.service.GetProfileStats(ctx, id)
 	if err != nil {
 		slog.Error("failed to get profile stats", "err", err, "prof_id", id)
 		switch {

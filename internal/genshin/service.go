@@ -315,7 +315,7 @@ func (s *svc) GetProfileStats(ctx context.Context, profID int64) (profileStatsRe
 		}
 	}
 	res := profileStatsResponse{
-		CharCount:     charCount,
+		CharCount:     charCount + 1, // +1 is for traveler
 		ElementCounts: mappedStats,
 	}
 	return res, nil

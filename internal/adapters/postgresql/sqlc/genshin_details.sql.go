@@ -633,6 +633,7 @@ FROM genshin_profiles gp
 LEFT JOIN profile_chars pc on gp.id = pc.prof_id
 LEFT JOIN char_details cd on cd.id = pc.char_id
 WHERE gp.id = $1
+    AND (cd.name NOT ILIKE '%Traveler%' OR cd.name IS NULL)
 GROUP BY gp.id
 `
 
@@ -651,6 +652,7 @@ from profile_chars pc
 JOIN char_details cd ON pc.char_id = cd.id
 JOIN elements e ON cd.element_id = e.id
 WHERE pc.prof_id = $1
+    AND (cd.name NOT ILIKE '%Traveler%' OR cd.name IS NULL)
 GROUP BY e.id, e.name
 ORDER BY char_count DESC
 `

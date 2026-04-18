@@ -40,7 +40,7 @@ func (app *application) mount() http.Handler {
 	r.Use(clerkhttp.WithHeaderAuthorization())
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(func(next http.Handler) http.Handler {
-		limiter := httprate.NewRateLimiter(60, 1*time.Minute)
+		limiter := httprate.NewRateLimiter(300, 1*time.Minute)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("X-Internal-Token") == app.config.internalToken {
 				next.ServeHTTP(w, r)
