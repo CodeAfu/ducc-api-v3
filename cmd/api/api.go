@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
@@ -122,6 +123,24 @@ func (app *application) mount() http.Handler {
 	})
 
 	return r
+}
+
+func (app *application) onlyAllowedOrigins(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Internal-Token") == app.config.internalToken {
+			next.ServeHTTP(w, r)
+			return
+		}
+		origin := r.Header.Get("Origin")
+		referer := r.Header.Get("Referer")
+		for _, o := range app.config.corsOrigins {
+			if strings.HasPrefix(origin, o) || strings.HasPrefix(referer, o) {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		http.Error(w, "forbidden", http.StatusForbidden)
+	})
 }
 
 func (app *application) run(h http.Handler) error {
