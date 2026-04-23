@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +19,6 @@ import (
 
 // @title           Ducc API
 // @version         3.0
-// @host            localhost:8088
 // @BasePath        /
 // @securityDefinitions.apikey BearerAuth
 // @in header
@@ -26,9 +26,7 @@ import (
 func main() {
 	_ = godotenv.Load()
 
-	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{
-		Level: slog.LevelDebug,
-	}))
+	logger := newLogger()
 	slog.SetDefault(logger)
 
 	cfg, err := loadConfig()
@@ -72,6 +70,38 @@ func newDBPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	return pgxpool.NewWithConfig(ctx, poolConfig)
 }
 
+func newLogger() *slog.Logger {
+	env := os.Getenv("ENV")
+	if env == "" {
+		env = "development"
+	}
+
+	var handler slog.Handler
+	switch env {
+	case "development":
+		handler = tint.NewHandler(os.Stdout, &tint.Options{
+			Level:      slog.LevelDebug,
+			AddSource:  true,
+			TimeFormat: time.Kitchen,
+		})
+	case "production":
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level:     slog.LevelInfo,
+			AddSource: false,
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				if a.Key == slog.MessageKey {
+					a.Key = "message"
+				}
+				return a
+			},
+		})
+	default:
+		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+		panic("invalid environment: " + env)
+	}
+	return slog.New(handler)
+}
+
 func loadConfig() (config, error) {
 	internalToken, err := envutils.GetString("INTERNAL_TOKEN")
 	if err != nil {
@@ -98,9 +128,20 @@ func loadConfig() (config, error) {
 		return config{}, fmt.Errorf("CORS_ORIGINS: %w", err)
 	}
 
+	port, err := envutils.GetString("PORT")
+	if err != nil {
+		return config{}, fmt.Errorf("PORT: %w", err)
+	}
+
+	// Validate port
+	p, err := strconv.Atoi(port)
+	if err != nil || p < 1 || p > 65535 {
+		return config{}, fmt.Errorf("invalid port: %s", port)
+	}
+
 	return config{
 		env:           envVar,
-		addr:          ":8088",
+		addr:          ":" + port,
 		internalToken: internalToken,
 		db:            dbConfig{dsn: dsn},
 		clerk:         clerkConfig{key: clerkKey},

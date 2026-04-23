@@ -2,7 +2,9 @@ package scraperutils
 
 import (
 	"context"
+	"math/rand"
 	"sync"
+	"time"
 )
 
 func RepeatFunc[T any](ctx context.Context, fn func() T) <-chan T {
@@ -66,4 +68,11 @@ func FanOut[T any, R any](ctx context.Context, input <-chan T, maxWorkers int, f
 	}()
 
 	return out
+}
+
+func SleepRangeMs(x, y int) time.Duration {
+	if y <= x {
+		return time.Duration(x) * time.Millisecond
+	}
+	return time.Duration(x+rand.Intn(y-x)) * time.Millisecond
 }

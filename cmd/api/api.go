@@ -39,7 +39,6 @@ func (app *application) mount() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.StripSlashes)
 	r.Use(clerkhttp.WithHeaderAuthorization())
-	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(func(next http.Handler) http.Handler {
 		limiter := httprate.NewRateLimiter(300, 1*time.Minute)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -61,24 +60,32 @@ func (app *application) mount() http.Handler {
 
 	// Health Check
 	r.Get("/api/v3/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("service is running"))
 	})
 
 	// Bingo
 	bingoService := bingo.NewService(repo.New(app.db), app.db)
 	bingoHandler := bingo.NewHandler(bingoService)
-	r.Get("/api/v3/bingo", bingoHandler.GetBingo)
-	r.Get("/api/v3/bingo/{id}", bingoHandler.GetBingoById)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.Timeout(60 * time.Second))
+		r.Get("/api/v3/bingo", bingoHandler.GetBingo)
+		r.Get("/api/v3/bingo/{id}", bingoHandler.GetBingoById)
+	})
 	r.Group(func(r chi.Router) {
 		r.Use(clerkhttp.RequireHeaderAuthorization())
+		r.Use(middleware.Timeout(60 * time.Second))
 		r.Post("/api/v3/bingo", bingoHandler.CreateBingo)
 	})
 
 	// Image
 	imageService := image.NewService(repo.New(app.db), app.db)
 	imageHandler := image.NewHandler(imageService)
-	r.Get("/api/v3/images", imageHandler.GetImages)
-	r.Get("/api/v3/images/{id}", imageHandler.GetImageById)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.Timeout(60 * time.Second))
+		r.Get("/api/v3/images", imageHandler.GetImages)
+		r.Get("/api/v3/images/{id}", imageHandler.GetImageById)
+	})
 	r.Group(func(r chi.Router) {
 		r.Use(clerkhttp.RequireHeaderAuthorization())
 		r.Post("/api/v3/images", imageHandler.CreateImage)
@@ -88,7 +95,7 @@ func (app *application) mount() http.Handler {
 	// HoyoLab Scraper
 	hylscraperService := hylscraper.NewService(repo.New(app.db), app.db)
 	hylscraperHandler := hylscraper.NewHandler(hylscraperService)
-	r.Get("/api/v3/hylscraper", hylscraperHandler.Scrape)
+	r.Get("/api/v3/hylscraper/scrape", hylscraperHandler.Scrape)
 
 	// Reddit Scraper
 	redditscraperService := redditscraper.NewService(repo.New(app.db), app.db)
@@ -98,11 +105,14 @@ func (app *application) mount() http.Handler {
 	// Genshin Impact
 	genshinService := genshin.NewService(repo.New(app.db), app.db)
 	genshinHandler := genshin.NewHandler(genshinService)
-	r.Get("/api/v3/genshin/characters", genshinHandler.GetAllChars)
-	r.Get("/api/v3/genshin/characters/{id}", genshinHandler.GetGenshinChar)
-	r.Get("/api/v3/genshin/elements", genshinHandler.GetAllElements)
-	r.Get("/api/v3/genshin/elements/{element}/icon", genshinHandler.GetElementIconByName)
-	r.Get("/api/v3/genshin/elements/id", genshinHandler.GetElementId)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.Timeout(60 * time.Second))
+		r.Get("/api/v3/genshin/characters", genshinHandler.GetAllChars)
+		r.Get("/api/v3/genshin/characters/{id}", genshinHandler.GetGenshinChar)
+		r.Get("/api/v3/genshin/elements", genshinHandler.GetAllElements)
+		r.Get("/api/v3/genshin/elements/{element}/icon", genshinHandler.GetElementIconByName)
+		r.Get("/api/v3/genshin/elements/id", genshinHandler.GetElementId)
+	})
 	r.Group(func(r chi.Router) {
 		r.Use(clerkhttp.RequireHeaderAuthorization())
 		r.Get("/api/v3/genshin/profiles", genshinHandler.GetProfiles)
@@ -147,8 +157,8 @@ func (app *application) run(h http.Handler) error {
 	srv := &http.Server{
 		Addr:         app.config.addr,
 		Handler:      h,
-		WriteTimeout: 30 * time.Second,
-		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 0,
+		ReadTimeout:  20 * time.Second,
 		IdleTimeout:  time.Minute,
 	}
 	srv.SetKeepAlivesEnabled(true)

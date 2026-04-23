@@ -127,7 +127,9 @@ func (s *svc) ScrapeAndStore(ctx context.Context, subreddit string, limit int) (
 }
 
 func scrapeComments(allocCtx context.Context, url string) ([]string, error) {
-	ctx, cancel := chromedp.NewContext(allocCtx)
+	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithDebugf(func(f string, v ...interface{}) {
+		slog.Debug(fmt.Sprintf(f, v...))
+	}))
 	defer cancel()
 
 	var comments []string

@@ -24,6 +24,9 @@ WORKDIR /
 COPY --from=builder /app/server /server
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
+# HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+#     CMD curl -f http://localhost:8088/api/v3/health || exit 1
+
 EXPOSE 8088
 
 ENTRYPOINT ["/server"]
