@@ -24,6 +24,7 @@ func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	subreddit := r.URL.Query().Get("subreddit")
 	if subreddit == "" {
@@ -65,7 +66,7 @@ func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		jsonData, _ := json.Marshal(result)
-		fmt.Fprintf(w, "data: &s\n\n", jsonData)
+		fmt.Fprintf(w, "data: %s\n\n", jsonData)
 		flusher.Flush()
 	}
 }
