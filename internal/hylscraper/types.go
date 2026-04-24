@@ -3,10 +3,10 @@ package hylscraper
 type ScraperStatus string
 
 const (
-	Initializing    ScraperStatus = "Initializing Scraper..."
-	Loading         ScraperStatus = "Loading..."
-	FetchingLinks   ScraperStatus = "Fetching Links..."
-	LoadingContents ScraperStatus = "Loading Post Contents..."
+	StatusInitializing  ScraperStatus = "initializing"
+	StatusFetchingLinks ScraperStatus = "fetching"
+	StatusFetchComplete ScraperStatus = "done"
+	StatusError         ScraperStatus = "error"
 )
 
 type ScrapeData struct {
@@ -21,8 +21,10 @@ type ScrapeComment struct {
 	Content string `json:"content"`
 }
 
-type ScrapeResult struct {
+type LinkResult struct {
 	Status       ScraperStatus `json:"status"`
-	Data         *ScrapeData   `json:"data,omitempty"`
-	ErrorMessage string        `json:"error_message,omitempty"`
+	Url          string        `json:"url,omitempty"`
+	Title        string        `json:"title,omitempty"`
+	Author       string        `json:"author,omitempty"`
+	ErrorMessage string        `json:"error,omitempty"`
 }

@@ -96,6 +96,7 @@ func (app *application) mount() http.Handler {
 	hylscraperService := hylscraper.NewService(repo.New(app.db), app.db)
 	hylscraperHandler := hylscraper.NewHandler(hylscraperService)
 	r.Get("/api/v3/hylscraper/scrape", hylscraperHandler.Scrape)
+	r.Post("/api/v3/hylscraper/subscribe", hylscraperHandler.StreamUpdates)
 
 	// Reddit Scraper
 	redditscraperService := redditscraper.NewService(repo.New(app.db), app.db)

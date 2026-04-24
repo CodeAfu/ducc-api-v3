@@ -19,7 +19,7 @@ import (
 // var stealthJS string
 
 type HylService interface {
-	Scrape(ctx context.Context, limit int) (<-chan string, error)
+	Scrape(ctx context.Context, limit int) (<-chan LinkResult, error)
 }
 
 type svc struct {
@@ -34,22 +34,24 @@ func NewService(repo *repo.Queries, db *pgxpool.Pool) HylService {
 	}
 }
 
-func (s *svc) Scrape(ctx context.Context, limit int) (<-chan string, error) {
+func (s *svc) Scrape(ctx context.Context, limit int) (<-chan LinkResult, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", false),
+		chromedp.Flag("headless", true),
 	)
 
 	allocCtx, cancel := chromedp.NewExecAllocator(ctx, opts...)
-
 	browserCtx, cancelBrowser := chromedp.NewContext(allocCtx, chromedp.WithDebugf(func(f string, v ...interface{}) {
 		slog.Debug(fmt.Sprintf(f, v...))
 	}))
 
-	linksCh := make(chan string)
+	linksCh := make(chan LinkResult)
+	frontendCh := make(chan LinkResult)
+	workerCh := make(chan LinkResult)
+
 	go func() {
-		defer cancel()
-		defer cancelBrowser()
 		defer close(linksCh)
+
+		linksCh <- LinkResult{Status: StatusInitializing}
 
 		err := getLinks(browserCtx, linksCh, limit)
 		if err != nil {
@@ -58,10 +60,62 @@ func (s *svc) Scrape(ctx context.Context, limit int) (<-chan string, error) {
 		}
 	}()
 
-	return linksCh, nil
+	go func() {
+		defer close(frontendCh)
+		defer close(workerCh)
+		for link := range linksCh {
+			select {
+			case <-ctx.Done():
+				return
+			case frontendCh <- link:
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case workerCh <- link:
+			}
+		}
+	}()
+
+	resCh := scraperutils.FanOut(ctx, workerCh, 5, func(link LinkResult) ScrapeData {
+		return scrapeTab(browserCtx, link)
+	})
+
+	go func() {
+		defer cancel()
+		defer cancelBrowser()
+		for res := range resCh {
+			slog.Info("successfully scraped tab", "url", res.Permalink)
+		}
+	}()
+
+	return frontendCh, nil
 }
 
-func getLinks(ctx context.Context, linksCh chan<- string, limit int) error {
+func scrapeTab(parentCtx context.Context, linkResult LinkResult) ScrapeData {
+	result := ScrapeData{
+		Permalink: linkResult.Url,
+	}
+	if linkResult.Url == "" {
+		return result
+	}
+
+	tabCtx, cancelTab := chromedp.NewContext(parentCtx)
+	defer cancelTab()
+
+	if err := chromedp.Run(tabCtx,
+		chromedp.Navigate(linkResult.Url),
+		chromedp.Sleep(scraperutils.SleepRangeMs(3000, 5000)),
+		chromedp.Title(&result.Title),
+	); err != nil {
+		slog.Error("failed to scrape tab", "url", linkResult.Url, "err", err)
+	}
+
+	return result
+}
+
+func getLinks(ctx context.Context, linksCh chan<- LinkResult, limit int) error {
 	url := "https://www.hoyolab.com/circles/2/30/feed?page_type=30&page_sort=new"
 	taskCtx, cancel := chromedp.NewContext(ctx)
 	defer cancel()
@@ -83,7 +137,14 @@ func getLinks(ctx context.Context, linksCh chan<- string, limit int) error {
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			seen := map[string]bool{}
 			for {
+				// type result struct {
+				// 	url string
+				// 	title string
+				// 	author string
+				// }
+				// var cur []result
 				var current []string
+				// Get url
 				if err := chromedp.Evaluate(`
 					Array.from(document.querySelectorAll('a.mhy-article-card__link'))
 						.map(a => a.getAttribute('href'))
@@ -92,12 +153,20 @@ func getLinks(ctx context.Context, linksCh chan<- string, limit int) error {
 				`, &current).Do(ctx); err != nil {
 					return err
 				}
+				// Get Post Title
+				// Get Author
 				for _, link := range current {
 					if !seen[link] {
 						seen[link] = true
-						linksCh <- link
+						linksCh <- LinkResult{
+							Status: StatusFetchingLinks,
+							Url:    link,
+						}
 					}
 					if len(seen) >= limit {
+						linksCh <- LinkResult{
+							Status: StatusFetchComplete,
+						}
 						return nil
 					}
 				}
@@ -111,6 +180,10 @@ func getLinks(ctx context.Context, linksCh chan<- string, limit int) error {
 		}),
 	); err != nil {
 		slog.Error(fmt.Sprintf("error while executing chromedp task: %v", err))
+		linksCh <- LinkResult{
+			Status:       StatusError,
+			ErrorMessage: err.Error(),
+		}
 	}
 
 	time.Sleep(time.Second * 5)

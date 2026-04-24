@@ -2,10 +2,14 @@ package hylscraper
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/CodeAfu/go-ducc-api/internal/adapters/http/httputil"
 )
 
 type handler struct {
@@ -29,6 +33,12 @@ func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
 	limitStr := r.URL.Query().Get("limit")
 	if limitStr == "" {
 		http.Error(w, "limit param is null", http.StatusBadRequest)
@@ -47,30 +57,55 @@ func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-		return
-	}
+	bgCtx, _ := context.WithTimeout(context.Background(), time.Minute*40)
+	// defer bgCancel()
 
-	ctx, cancel := context.WithTimeout(r.Context(), time.Minute*60)
-	defer cancel()
-
-	results, err := h.service.Scrape(ctx, limit)
+	results, err := h.service.Scrape(bgCtx, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "data: {\"message\":\"Scrape job started in the background\"}\n\n")
+	flusher.Flush()
 
 	for link := range results {
 		select {
 		case <-r.Context().Done():
 			return
 		default:
-			fmt.Fprintf(w, "data: %s\n\n", link)
+			jsonData, err := json.Marshal(link)
+			if err != nil {
+				slog.Error("error while parsing ScrapeResult", "err", err)
+				continue
+			}
+			fmt.Fprintf(w, "data: %s\n\n", string(jsonData))
 			flusher.Flush()
 		}
 	}
+
 	fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+	flusher.Flush()
+}
+
+func (h *handler) StreamUpdates(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	_, ok := httputil.GetEmailFromAuthHeader(r)
+	if !ok {
+		http.Error(w, "Email not found on auth token", http.StatusUnauthorized)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// svc that interacts with db
+
 	flusher.Flush()
 }
