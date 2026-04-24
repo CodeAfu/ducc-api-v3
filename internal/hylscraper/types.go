@@ -16,8 +16,13 @@ type ScrapeData struct {
 	Content   string `json:"content"`
 }
 
+type ScrapeComment struct {
+	Author  string `json:"author"`
+	Content string `json:"content"`
+}
+
 type ScrapeResult struct {
-	Status ScraperStatus
-	Data   ScrapeData
-	Err    error
+	Status       ScraperStatus `json:"status"`
+	Data         *ScrapeData   `json:"data,omitempty"`
+	ErrorMessage string        `json:"error_message,omitempty"`
 }

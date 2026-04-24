@@ -14,7 +14,6 @@ import (
 const addHylComment = `-- name: AddHylComment :one
 INSERT INTO hyl_comments (session_id, post_id, parent_comment_id, url, author, content) 
     VALUES ($1, $2, $3, $4, $5, $6)
-    ON CONFLICT (url) DO NOTHING
     RETURNING id, session_id, post_id, parent_comment_id, url, author, content, created_at, updated_at
 `
 
@@ -54,7 +53,6 @@ func (q *Queries) AddHylComment(ctx context.Context, arg AddHylCommentParams) (H
 const addHylPost = `-- name: AddHylPost :one
 INSERT INTO hyl_posts (session_id, url, author, title, content) 
     VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT (url) DO NOTHING
     RETURNING id, session_id, url, author, title, content, created_at, updated_at
 `
 

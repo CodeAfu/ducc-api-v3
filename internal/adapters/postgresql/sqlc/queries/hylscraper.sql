@@ -15,7 +15,6 @@ SELECT * FROM hyl_posts WHERE author = $1;
 -- name: AddHylPost :one
 INSERT INTO hyl_posts (session_id, url, author, title, content) 
     VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT (url) DO NOTHING
     RETURNING *;
 
 
@@ -25,7 +24,6 @@ SELECT * FROM hyl_comments WHERE author = $1;
 -- name: AddHylComment :one
 INSERT INTO hyl_comments (session_id, post_id, parent_comment_id, url, author, content) 
     VALUES ($1, $2, $3, $4, $5, $6)
-    ON CONFLICT (url) DO NOTHING
     RETURNING *;
 
 

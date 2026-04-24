@@ -41,8 +41,9 @@ func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if limit > 2000 || limit <= 0 {
-		http.Error(w, "1 <= limit <= 2000", http.StatusBadRequest)
+	upperLim := 5000
+	if limit > upperLim || limit <= 0 {
+		http.Error(w, fmt.Sprintf("1 <= limit <= %d", upperLim), http.StatusBadRequest)
 		return
 	}
 
