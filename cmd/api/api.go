@@ -95,8 +95,11 @@ func (app *application) mount() http.Handler {
 	// HoyoLab Scraper
 	hylscraperService := hylscraper.NewService(repo.New(app.db), app.db)
 	hylscraperHandler := hylscraper.NewHandler(hylscraperService)
-	r.Get("/api/v3/hylscraper/scrape", hylscraperHandler.Scrape)
-	r.Post("/api/v3/hylscraper/subscribe", hylscraperHandler.StreamUpdates)
+	r.Group(func(r chi.Router) {
+		// r.Use(app.onlyAllowedOrigins)
+		r.Get("/api/v3/hylscraper/scrape", hylscraperHandler.Scrape)
+		r.Get("/api/v3/hylscraper/{id}/subscribe", hylscraperHandler.StreamUpdates)
+	})
 
 	// Reddit Scraper
 	redditscraperService := redditscraper.NewService(repo.New(app.db), app.db)

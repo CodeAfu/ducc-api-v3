@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/http/httputil"
+	"github.com/go-chi/chi/v5"
 )
 
 type handler struct {
@@ -95,11 +96,25 @@ func (h *handler) StreamUpdates(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	_, ok := httputil.GetEmailFromAuthHeader(r)
+	email, ok := httputil.GetEmailFromAuthHeader(r)
 	if !ok {
-		http.Error(w, "Email not found on auth token", http.StatusUnauthorized)
+		http.Error(w, "You are not authorized to use this endpoint", http.StatusUnauthorized)
 		return
 	}
+
+	sessionIdStr := chi.URLParam(r, "id")
+
+	if sessionIdStr == "" {
+		http.Error(w, "ID param is missing", http.StatusBadRequest)
+		return
+	}
+	sessionId, err := strconv.ParseInt(sessionIdStr, 10, 64)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	slog.Info("streaming scrape session posts and comments", "id", sessionId, "email", email)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {

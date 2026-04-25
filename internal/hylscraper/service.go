@@ -96,6 +96,8 @@ func (s *svc) Scrape(ctx context.Context, limit int) (<-chan LinkResult, error) 
 func scrapeTab(parentCtx context.Context, linkResult LinkResult) ScrapeData {
 	result := ScrapeData{
 		Permalink: linkResult.Url,
+		Title:     linkResult.Title,
+		Author:    linkResult.Author,
 	}
 	if linkResult.Url == "" {
 		return result
@@ -104,11 +106,15 @@ func scrapeTab(parentCtx context.Context, linkResult LinkResult) ScrapeData {
 	tabCtx, cancelTab := chromedp.NewContext(parentCtx)
 	defer cancelTab()
 
-	if err := chromedp.Run(tabCtx,
-		chromedp.Navigate(linkResult.Url),
-		chromedp.Sleep(scraperutils.SleepRangeMs(3000, 5000)),
-		chromedp.Title(&result.Title),
-	); err != nil {
+	var actions []chromedp.Action
+	actions = append(actions, chromedp.Navigate(linkResult.Url))
+	actions = append(actions, chromedp.Sleep(scraperutils.SleepRangeMs(3000, 5000)))
+
+	if result.Title == "" {
+		actions = append(actions, chromedp.Title(&result.Title))
+	}
+
+	if err := chromedp.Run(tabCtx, actions...); err != nil {
 		slog.Error("failed to scrape tab", "url", linkResult.Url, "err", err)
 	}
 
@@ -137,30 +143,38 @@ func getLinks(ctx context.Context, linksCh chan<- LinkResult, limit int) error {
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			seen := map[string]bool{}
 			for {
-				// type result struct {
-				// 	url string
-				// 	title string
-				// 	author string
-				// }
-				// var cur []result
-				var current []string
-				// Get url
+				type result struct {
+					URL    string `json:"url"`
+					Title  string `json:"title"`
+					Author string `json:"author"`
+				}
+				var cur []result
+				// Get url, title and author
 				if err := chromedp.Evaluate(`
-					Array.from(document.querySelectorAll('a.mhy-article-card__link'))
-						.map(a => a.getAttribute('href'))
-						.filter(href => href && href.startsWith('/article/'))
-						.map(href => 'https://www.hoyolab.com' + href)
-				`, &current).Do(ctx); err != nil {
+					Array.from(document.querySelectorAll('.mhy-article-card'))
+						.map(card => {
+							const link = card.querySelector('a.mhy-article-card__link');
+							const title = card.querySelector('.mhy-article-card__text');
+							const author = card.querySelector('.mhy-account-title__name');
+							return {
+								url: link ? 'https://www.hoyolab.com' + link.getAttribute('href') : '',
+								title: title ? title.innerText.trim() : '',
+								author: author ? author.innerText.trim() : ''
+							};
+						})
+						.filter(res => res.url && res.url.includes('/article/'))
+				`, &cur).Do(ctx); err != nil {
 					return err
 				}
-				// Get Post Title
-				// Get Author
-				for _, link := range current {
-					if !seen[link] {
-						seen[link] = true
+
+				for _, r := range cur {
+					if !seen[r.URL] {
+						seen[r.URL] = true
 						linksCh <- LinkResult{
 							Status: StatusFetchingLinks,
-							Url:    link,
+							Url:    r.URL,
+							Title:  r.Title,
+							Author: r.Author,
 						}
 					}
 					if len(seen) >= limit {
