@@ -2,98 +2,97 @@ package hylscraper
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
-	// _ "embed"
-
-	"github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
+	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/scraper/scraperutils"
-	// "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// //go:embed stealth.min.js
-// var stealthJS string
-
 type HylService interface {
-	Scrape(ctx context.Context, limit int) (<-chan LinkResult, error)
+	Scrape(limit int) (<-chan LinkResult, error)
 }
 
 type svc struct {
-	repo *repo.Queries
-	db   *pgxpool.Pool
+	repo     *repo.Queries
+	db       *pgxpool.Pool
+	headless bool
 }
 
-func NewService(repo *repo.Queries, db *pgxpool.Pool) HylService {
+func NewService(repo *repo.Queries, db *pgxpool.Pool, headless bool) HylService {
 	return &svc{
-		repo: repo,
-		db:   db,
+		repo:     repo,
+		db:       db,
+		headless: headless,
 	}
 }
 
-func (s *svc) Scrape(ctx context.Context, limit int) (<-chan LinkResult, error) {
+func (s *svc) Scrape(limit int) (<-chan LinkResult, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
+		chromedp.Flag("headless", s.headless),
+		chromedp.NoSandbox,
 	)
 
-	allocCtx, cancel := chromedp.NewExecAllocator(ctx, opts...)
-	browserCtx, cancelBrowser := chromedp.NewContext(allocCtx, chromedp.WithDebugf(func(f string, v ...interface{}) {
-		slog.Debug(fmt.Sprintf(f, v...))
-	}))
+	// Fire and forget: decoupled from request context
+	jobCtx, jobCancel := context.WithTimeout(context.Background(), 40*time.Minute)
+
+	allocCtx, allocCancel := chromedp.NewExecAllocator(jobCtx, opts...)
+	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 
 	linksCh := make(chan LinkResult)
-	frontendCh := make(chan LinkResult)
-	workerCh := make(chan LinkResult)
+	frontendCh := make(chan LinkResult, 100)
+	workerCh := make(chan LinkResult, limit)
 
+	// 1. Link Fetcher (Opens 1 Tab)
 	go func() {
 		defer close(linksCh)
-
 		linksCh <- LinkResult{Status: StatusInitializing}
-
-		err := getLinks(browserCtx, linksCh, limit)
-		if err != nil {
+		if err := getLinks(browserCtx, linksCh, limit); err != nil {
 			slog.Error("getLinks failed", "err", err)
-			return
 		}
 	}()
 
+	// 2. Distributor
 	go func() {
 		defer close(frontendCh)
 		defer close(workerCh)
 		for link := range linksCh {
 			select {
-			case <-ctx.Done():
-				return
 			case frontendCh <- link:
+			default:
 			}
-
 			select {
-			case <-ctx.Done():
+			case <-jobCtx.Done():
 				return
 			case workerCh <- link:
 			}
 		}
 	}()
 
-	resCh := scraperutils.FanOut(ctx, workerCh, 5, func(link LinkResult) ScrapeData {
+	// 3. Tab Workers
+	resCh := scraperutils.FanOut(jobCtx, workerCh, 5, func(link LinkResult) ScrapeData {
 		return scrapeTab(browserCtx, link)
 	})
 
+	// 4. Persistence & Cleanup
 	go func() {
-		defer cancel()
-		defer cancelBrowser()
+		defer jobCancel()
+		defer browserCancel()
+		defer allocCancel()
+
 		for res := range resCh {
-			slog.Info("successfully scraped tab", "url", res.Permalink)
+			slog.Info("scraped data", "url", res.Permalink, "title", res.Title)
 		}
+		slog.Info("scrape job completed and chrome process killed")
 	}()
 
 	return frontendCh, nil
 }
 
-func scrapeTab(parentCtx context.Context, linkResult LinkResult) ScrapeData {
+func scrapeTab(browserCtx context.Context, linkResult LinkResult) ScrapeData {
 	result := ScrapeData{
 		Permalink: linkResult.Url,
 		Title:     linkResult.Title,
@@ -103,7 +102,7 @@ func scrapeTab(parentCtx context.Context, linkResult LinkResult) ScrapeData {
 		return result
 	}
 
-	tabCtx, cancelTab := chromedp.NewContext(parentCtx)
+	tabCtx, cancelTab := chromedp.NewContext(browserCtx)
 	defer cancelTab()
 
 	var actions []chromedp.Action
@@ -121,16 +120,10 @@ func scrapeTab(parentCtx context.Context, linkResult LinkResult) ScrapeData {
 	return result
 }
 
-func getLinks(ctx context.Context, linksCh chan<- LinkResult, limit int) error {
+func getLinks(browserCtx context.Context, linksCh chan<- LinkResult, limit int) error {
 	url := "https://www.hoyolab.com/circles/2/30/feed?page_type=30&page_sort=new"
-	taskCtx, cancel := chromedp.NewContext(ctx)
-	defer cancel()
 
-	if err := chromedp.Run(taskCtx,
-		// chromedp.ActionFunc(func(ctx context.Context) error {
-		// 	_, err := page.AddScriptToEvaluateOnNewDocument(stealthJS).Do(ctx)
-		// 	return err
-		// }),
+	if err := chromedp.Run(browserCtx,
 		chromedp.Navigate(url),
 		chromedp.WaitVisible(`button.el-dialog__headerbtn`),
 		chromedp.Sleep(scraperutils.SleepRangeMs(300, 700)),
@@ -149,7 +142,6 @@ func getLinks(ctx context.Context, linksCh chan<- LinkResult, limit int) error {
 					Author string `json:"author"`
 				}
 				var cur []result
-				// Get url, title and author
 				if err := chromedp.Evaluate(`
 					Array.from(document.querySelectorAll('.mhy-article-card'))
 						.map(card => {
@@ -178,9 +170,7 @@ func getLinks(ctx context.Context, linksCh chan<- LinkResult, limit int) error {
 						}
 					}
 					if len(seen) >= limit {
-						linksCh <- LinkResult{
-							Status: StatusFetchComplete,
-						}
+						linksCh <- LinkResult{Status: StatusFetchComplete}
 						return nil
 					}
 				}
@@ -193,7 +183,7 @@ func getLinks(ctx context.Context, linksCh chan<- LinkResult, limit int) error {
 			return nil
 		}),
 	); err != nil {
-		slog.Error(fmt.Sprintf("error while executing chromedp task: %v", err))
+		slog.Error("error while executing chromedp task", "err", err)
 		linksCh <- LinkResult{
 			Status:       StatusError,
 			ErrorMessage: err.Error(),
@@ -201,7 +191,5 @@ func getLinks(ctx context.Context, linksCh chan<- LinkResult, limit int) error {
 	}
 
 	time.Sleep(time.Second * 5)
-	slog.Debug("retrieved links", "url", url, "limit", limit)
-
 	return nil
 }

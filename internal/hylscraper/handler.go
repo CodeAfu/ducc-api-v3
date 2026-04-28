@@ -1,13 +1,11 @@
 package hylscraper
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/http/httputil"
 	"github.com/go-chi/chi/v5"
@@ -30,17 +28,6 @@ func NewHandler(s HylService) *handler {
 // @Failure  500 {object} map[string]string
 // @Router   /api/v3/hylscraper [get]
 func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
-		return
-	}
-
 	limitStr := r.URL.Query().Get("limit")
 	if limitStr == "" {
 		http.Error(w, "limit param is null", http.StatusBadRequest)
@@ -59,14 +46,23 @@ func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bgCtx, _ := context.WithTimeout(context.Background(), time.Minute*40)
-	// defer bgCancel()
-
-	results, err := h.service.Scrape(bgCtx, limit)
+	results, err := h.service.Scrape(limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "data: {\"message\":\"Scrape job started in the background\"}\n\n")
 	flusher.Flush()
@@ -74,6 +70,7 @@ func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
 	for link := range results {
 		select {
 		case <-r.Context().Done():
+			// Client disconnected, but scrape continues in background
 			return
 		default:
 			jsonData, err := json.Marshal(link)

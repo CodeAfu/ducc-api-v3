@@ -26,6 +26,7 @@ import (
 // mount
 func (app *application) mount() http.Handler {
 	r := chi.NewRouter()
+	isDev := app.config.env == "development"
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   app.config.corsOrigins,
@@ -93,7 +94,7 @@ func (app *application) mount() http.Handler {
 	})
 
 	// HoyoLab Scraper
-	hylscraperService := hylscraper.NewService(repo.New(app.db), app.db)
+	hylscraperService := hylscraper.NewService(repo.New(app.db), app.db, !isDev)
 	hylscraperHandler := hylscraper.NewHandler(hylscraperService)
 	r.Group(func(r chi.Router) {
 		// r.Use(app.onlyAllowedOrigins)
