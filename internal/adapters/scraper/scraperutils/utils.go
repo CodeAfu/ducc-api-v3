@@ -42,9 +42,9 @@ func FanOut[T any, R any](ctx context.Context, input <-chan T, maxWorkers int, f
 	sem := make(chan struct{}, maxWorkers)
 
 	go func() {
-		defer close(out)
-		// defer close(sem) // TODO: check if this is needed
 		var wg sync.WaitGroup
+		defer close(out)
+		defer wg.Wait()
 
 		for item := range input {
 			select {
@@ -64,7 +64,6 @@ func FanOut[T any, R any](ctx context.Context, input <-chan T, maxWorkers int, f
 				}
 			}(item)
 		}
-		wg.Wait()
 	}()
 
 	return out

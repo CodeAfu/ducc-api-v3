@@ -3,7 +3,8 @@ package hylscraper
 import (
 	"context"
 	"log/slog"
-	"os"
+	"math"
+	"runtime"
 	"time"
 
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
@@ -12,17 +13,26 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type HylService interface {
+type Service interface {
 	Scrape(limit int) (<-chan LinkResult, error)
+	StreamLinks(id int64) (<-chan ScrapeData, error)
+}
+
+type channels struct {
+	linksCh    chan LinkResult
+	frontendCh chan LinkResult
+	workerCh   chan LinkResult
+	resCh      chan ScrapeData
 }
 
 type svc struct {
 	repo     *repo.Queries
 	db       *pgxpool.Pool
 	headless bool
+	sessions map[int64]channels
 }
 
-func NewService(repo *repo.Queries, db *pgxpool.Pool, headless bool) HylService {
+func NewService(repo *repo.Queries, db *pgxpool.Pool, headless bool) Service {
 	return &svc{
 		repo:     repo,
 		db:       db,
@@ -31,13 +41,14 @@ func NewService(repo *repo.Queries, db *pgxpool.Pool, headless bool) HylService 
 }
 
 func (s *svc) Scrape(limit int) (<-chan LinkResult, error) {
+	start := time.Now()
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", s.headless),
 		chromedp.NoSandbox,
 	)
 
-	// Fire and forget: decoupled from request context
-	jobCtx, jobCancel := context.WithTimeout(context.Background(), 40*time.Minute)
+	// Fire and forget
+	jobCtx, jobCancel := context.WithTimeout(context.Background(), 60*time.Minute)
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(jobCtx, opts...)
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
@@ -73,7 +84,8 @@ func (s *svc) Scrape(limit int) (<-chan LinkResult, error) {
 	}()
 
 	// 3. Tab Workers
-	resCh := scraperutils.FanOut(jobCtx, workerCh, 5, func(link LinkResult) ScrapeData {
+	numTabs := int(math.Min(float64(runtime.NumCPU()), 5))
+	resCh := scraperutils.FanOut(jobCtx, workerCh, numTabs, func(link LinkResult) ScrapeData {
 		return scrapeTab(browserCtx, link)
 	})
 
@@ -83,31 +95,46 @@ func (s *svc) Scrape(limit int) (<-chan LinkResult, error) {
 		defer browserCancel()
 		defer allocCancel()
 
+		idx := 0
 		for res := range resCh {
-			slog.Info("scraped data", "url", res.Permalink, "title", res.Title)
+			if res.Permalink != "" {
+				slog.Info("hyl scrape data", "id", idx, "url", res.Permalink, "author", res.Author, "title", res.Title, "duration", res.Duration.String())
+				idx++
+			}
 		}
-		slog.Info("scrape job completed and chrome process killed")
+		elapsed := float64(time.Since(start).Milliseconds()) / 1000.0
+		slog.Info("scrape job completed and chrome process killed", "duration_s", elapsed)
 	}()
 
 	return frontendCh, nil
 }
 
+func (s *svc) StreamLinks(id int64) (<-chan ScrapeData, error) {
+	return s.sessions[id].resCh, nil
+}
+
 func scrapeTab(browserCtx context.Context, linkResult LinkResult) ScrapeData {
+	start := time.Now()
+
 	result := ScrapeData{
 		Permalink: linkResult.Url,
 		Title:     linkResult.Title,
 		Author:    linkResult.Author,
 	}
+
 	if linkResult.Url == "" {
 		return result
 	}
 
 	tabCtx, cancelTab := chromedp.NewContext(browserCtx)
+	tabCtx, timeoutCancel := context.WithTimeout(tabCtx, time.Second*30)
 	defer cancelTab()
+	defer timeoutCancel()
 
 	var actions []chromedp.Action
 	actions = append(actions, chromedp.Navigate(linkResult.Url))
-	actions = append(actions, chromedp.Sleep(scraperutils.SleepRangeMs(3000, 5000)))
+	actions = append(actions, chromedp.WaitVisible(`body`, chromedp.ByQuery))
+	actions = append(actions, chromedp.Sleep(scraperutils.SleepRangeMs(3000, 7000)))
 
 	if result.Title == "" {
 		actions = append(actions, chromedp.Title(&result.Title))
@@ -116,6 +143,9 @@ func scrapeTab(browserCtx context.Context, linkResult LinkResult) ScrapeData {
 	if err := chromedp.Run(tabCtx, actions...); err != nil {
 		slog.Error("failed to scrape tab", "url", linkResult.Url, "err", err)
 	}
+
+	result.ScrapedAt = time.Now()
+	result.Duration = time.Since(start)
 
 	return result
 }
