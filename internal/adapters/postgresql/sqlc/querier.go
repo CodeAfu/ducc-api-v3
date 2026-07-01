@@ -14,10 +14,11 @@ type Querier interface {
 	AddCharToProfile(ctx context.Context, arg AddCharToProfileParams) (AddCharToProfileRow, error)
 	AddHylComment(ctx context.Context, arg AddHylCommentParams) (HylComment, error)
 	AddHylPost(ctx context.Context, arg AddHylPostParams) (HylPost, error)
+	AddScrapeErrorById(ctx context.Context, arg AddScrapeErrorByIdParams) (HylScrapeSession, error)
 	CreateBingo(ctx context.Context, arg CreateBingoParams) (Bingo, error)
 	CreateGenshinChar(ctx context.Context, arg CreateGenshinCharParams) (CreateGenshinCharRow, error)
 	CreateGenshinProfile(ctx context.Context, arg CreateGenshinProfileParams) (GenshinProfile, error)
-	CreateHylScrapeSession(ctx context.Context, arg CreateHylScrapeSessionParams) (HylScrapeSession, error)
+	CreateHylScrapeSession(ctx context.Context, createdByEmail string) (HylScrapeSession, error)
 	CreateImage(ctx context.Context, arg CreateImageParams) (Image, error)
 	DeleteBingo(ctx context.Context, id int64) error
 	DeleteCharFromProfile(ctx context.Context, arg DeleteCharFromProfileParams) error
@@ -50,6 +51,7 @@ type Querier interface {
 	GetProfileElementCounts(ctx context.Context, profID int64) ([]GetProfileElementCountsRow, error)
 	GetProfiles(ctx context.Context) ([]GenshinProfile, error)
 	UpdateBingo(ctx context.Context, arg UpdateBingoParams) (Bingo, error)
+	UpdateHylScraperSession(ctx context.Context, arg UpdateHylScraperSessionParams) (HylScrapeSession, error)
 }
 
 var _ Querier = (*Queries)(nil)

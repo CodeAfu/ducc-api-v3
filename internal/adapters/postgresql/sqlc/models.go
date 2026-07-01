@@ -74,11 +74,13 @@ type HylPost struct {
 
 type HylScrapeSession struct {
 	ID             int64              `json:"id"`
-	Target         string             `json:"target"`
 	CreatedByEmail string             `json:"created_by_email"`
 	Description    pgtype.Text        `json:"description"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	Errors         []string           `json:"errors"`
+	ScrapeBegin    pgtype.Timestamptz `json:"scrape_begin"`
+	ScrapeEnd      pgtype.Timestamptz `json:"scrape_end"`
 }
 
 type Image struct {

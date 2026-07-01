@@ -1,12 +1,27 @@
 -- name: CreateHylScrapeSession :one
-INSERT INTO hyl_scrape_session (target, created_by_email)
-    VALUES ($1, $2) RETURNING *;
+INSERT INTO hyl_scrape_session (created_by_email)
+    VALUES ($1) RETURNING *;
 
 -- name: GetHylScrapeSessionByEmail :many
 SELECT * FROM hyl_scrape_session WHERE created_by_email = $1;
 
 -- name: GetHylScrapeSessionById :one
 SELECT * FROM hyl_scrape_session WHERE id = $1;
+
+-- name: AddScrapeErrorById :one
+UPDATE hyl_scrape_session
+SET errors = COALESCE(errors, '{}'::TEXT[]) || $2::TEXT[]
+WHERE id = $1
+RETURNING *;
+
+-- name: UpdateHylScraperSession :one
+UPDATE hyl_scrape_session
+SET
+    description = COALESCE(sqlc.narg(description), description),
+    scrape_begin = COALESCE(sqlc.narg(scrape_begin), scrape_begin),
+    scrape_end = COALESCE(sqlc.narg(scrape_end), scrape_end)
+WHERE id = sqlc.arg(id)
+RETURNING *;
 
 
 -- name: GetHylPostByAuthor :many

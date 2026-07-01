@@ -2,60 +2,161 @@ package hylscraper
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math"
 	"runtime"
+	"sync"
 	"time"
 
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/scraper/scraperutils"
 	"github.com/chromedp/chromedp"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service interface {
-	Scrape(limit int) (<-chan LinkResult, error)
-	StreamLinks(id int64) (<-chan ScrapeData, error)
+	Init(ctx context.Context, email string, limit int) (repo.HylScrapeSession, error)
+	// Stream(ctx context.Context, id int64) (idk) // TODO: MAKE ASAP
+	// Scrape(sessionId int64, limit int) (<-chan LinkResult, error)
+	// StreamLinks(id int64) (<-chan ScrapeData, error)
+	Subscribe(ctx context.Context, sessionID int64) error
 }
 
-type channels struct {
-	linksCh    chan LinkResult
-	frontendCh chan LinkResult
-	workerCh   chan LinkResult
-	resCh      chan ScrapeData
-}
+// type session struct {
+// 	data       repo.HylScrapeSession
+// 	linksCh    chan LinkResult
+// 	frontendCh chan LinkResult
+// 	workerCh   chan LinkResult
+// 	resCh      chan ScrapeData
+// }
 
 type svc struct {
-	repo     *repo.Queries
-	db       *pgxpool.Pool
-	headless bool
-	sessions map[int64]channels
+	repo        *repo.Queries
+	db          *pgxpool.Pool
+	headless    bool
+	subscribers map[int64][]chan LinkResult
+	mu          sync.RWMutex
+	contexts    []scraperContext
 }
 
 func NewService(repo *repo.Queries, db *pgxpool.Pool, headless bool) Service {
 	return &svc{
-		repo:     repo,
-		db:       db,
-		headless: headless,
+		repo:        repo,
+		db:          db,
+		headless:    headless,
+		subscribers: make(map[int64][]chan LinkResult),
+		mu:          sync.RWMutex{},
 	}
 }
 
-func (s *svc) Scrape(limit int) (<-chan LinkResult, error) {
+func (s *svc) Init(ctx context.Context, email string, limit int) (repo.HylScrapeSession, error) {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return repo.HylScrapeSession{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	qtx := s.repo.WithTx(tx)
+	session, err := qtx.CreateHylScrapeSession(ctx, email)
+	if err != nil {
+		return repo.HylScrapeSession{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return repo.HylScrapeSession{}, err
+	}
+
+	// Use context.Background() because s.scrape() is a fire and forget task
+	jobCtx, jobCancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	s.contexts = append(s.contexts, scraperContext{
+		id:      session.ID,
+		context: jobCtx,
+		cancel:  jobCancel,
+	})
+
+	// go func() {
+	// 	defer s.removeContext(session.ID)
+	// 	defer jobCancel()
+	//
+	// 	_, err := s.scrape(jobCtx, jobCancel, session.ID, limit)
+	// 	if err != nil {
+	// 		slog.Error("error while scraping", "err", err)
+	// 	}
+	// }()
+
+	return session, nil
+}
+
+func (s *svc) Subscribe(ctx context.Context, sessionID int64) error {
+	// conn, err := s.db.Acquire(ctx)
+	// if err != nil {
+	// 	return err
+	// }
+	// defer conn.Release()
+	//
+	// payloadChan := make(chan string)
+	//
+	// conn.Exec(ctx, "LISTEN scrape_events")
+	// for {
+	// 	notif, err := conn.Conn().WaitForNotification(ctx)
+	// 	if err != nil {
+	// 		break
+	// 	}
+	// 	payloadChan <- notif.Payload
+	// }
+
+	return fmt.Errorf("function not implemented")
+}
+
+func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessionId int64, limit int) (<-chan LinkResult, error) {
 	start := time.Now()
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", s.headless),
 		chromedp.NoSandbox,
 	)
 
-	// Fire and forget
-	jobCtx, jobCancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	// jobCtx, jobCancel := context.WithTimeout(context.Background(), 60*time.Minute)
 
-	allocCtx, allocCancel := chromedp.NewExecAllocator(jobCtx, opts...)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+	tx, err := s.db.BeginTx(jobCtx, pgx.TxOptions{})
+	if err != nil {
+		jobCancel()
+		return nil, err
+	}
+	defer tx.Rollback(jobCtx)
+	qtx := s.repo.WithTx(tx)
 
 	linksCh := make(chan LinkResult)
 	frontendCh := make(chan LinkResult, 100)
 	workerCh := make(chan LinkResult, limit)
+
+	abort := func() {
+		jobCancel()
+		close(linksCh)
+		close(frontendCh)
+		close(workerCh)
+	}
+
+	session, err := qtx.UpdateHylScraperSession(jobCtx, repo.UpdateHylScraperSessionParams{
+		ID:          sessionId,
+		ScrapeBegin: pgtype.Timestamptz{Valid: true, Time: start},
+	})
+	if err != nil {
+		abort()
+		return nil, err
+	}
+
+	if err := tx.Commit(jobCtx); err != nil {
+		abort()
+		return nil, err
+	}
+
+	slog.Info("session", "data", session)
+
+	allocCtx, allocCancel := chromedp.NewExecAllocator(jobCtx, opts...)
+	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 
 	// 1. Link Fetcher (Opens 1 Tab)
 	go func() {
@@ -98,20 +199,27 @@ func (s *svc) Scrape(limit int) (<-chan LinkResult, error) {
 		idx := 0
 		for res := range resCh {
 			if res.Permalink != "" {
-				slog.Info("hyl scrape data", "id", idx, "url", res.Permalink, "author", res.Author, "title", res.Title, "duration", res.Duration.String())
+				slog.Info("hyl scrape data",
+					"id", idx,
+					"url", res.Permalink,
+					"author", res.Author,
+					"title", res.Title,
+					"duration", res.Duration.String(),
+				)
 				idx++
 			}
 		}
 		elapsed := float64(time.Since(start).Milliseconds()) / 1000.0
 		slog.Info("scrape job completed and chrome process killed", "duration_s", elapsed)
+
 	}()
 
 	return frontendCh, nil
 }
 
-func (s *svc) StreamLinks(id int64) (<-chan ScrapeData, error) {
-	return s.sessions[id].resCh, nil
-}
+// func (s *svc) StreamLinks(id int64) (<-chan ScrapeData, error) {
+// 	return s.subscribers[id], nil
+// }
 
 func scrapeTab(browserCtx context.Context, linkResult LinkResult) ScrapeData {
 	start := time.Now()
@@ -222,4 +330,28 @@ func getLinks(browserCtx context.Context, linksCh chan<- LinkResult, limit int) 
 
 	time.Sleep(time.Second * 5)
 	return nil
+}
+
+// func (s *svc) publish(id int64, res LinkResult) {
+// 	s.mu.Lock()
+// 	defer s.mu.Unlock()
+// 	for _, ch := range s.subscribers[id] {
+// 		select {
+// 		case ch <- res:
+// 		default:
+// 		}
+// 	}
+// }
+
+func (s *svc) removeContext(id int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	contexts := s.contexts[:0]
+	for _, c := range s.contexts {
+		if c.id != id {
+			contexts = append(contexts, c)
+		}
+	}
+	s.contexts = contexts
 }

@@ -86,26 +86,51 @@ func (q *Queries) AddHylPost(ctx context.Context, arg AddHylPostParams) (HylPost
 	return i, err
 }
 
-const createHylScrapeSession = `-- name: CreateHylScrapeSession :one
-INSERT INTO hyl_scrape_session (target, created_by_email)
-    VALUES ($1, $2) RETURNING id, target, created_by_email, description, created_at, updated_at
+const addScrapeErrorById = `-- name: AddScrapeErrorById :one
+UPDATE hyl_scrape_session
+SET errors = COALESCE(errors, '{}'::TEXT[]) || $2::TEXT[]
+WHERE id = $1
+RETURNING id, created_by_email, description, created_at, updated_at, errors, scrape_begin, scrape_end
 `
 
-type CreateHylScrapeSessionParams struct {
-	Target         string `json:"target"`
-	CreatedByEmail string `json:"created_by_email"`
+type AddScrapeErrorByIdParams struct {
+	ID      int64    `json:"id"`
+	Column2 []string `json:"column_2"`
 }
 
-func (q *Queries) CreateHylScrapeSession(ctx context.Context, arg CreateHylScrapeSessionParams) (HylScrapeSession, error) {
-	row := q.db.QueryRow(ctx, createHylScrapeSession, arg.Target, arg.CreatedByEmail)
+func (q *Queries) AddScrapeErrorById(ctx context.Context, arg AddScrapeErrorByIdParams) (HylScrapeSession, error) {
+	row := q.db.QueryRow(ctx, addScrapeErrorById, arg.ID, arg.Column2)
 	var i HylScrapeSession
 	err := row.Scan(
 		&i.ID,
-		&i.Target,
 		&i.CreatedByEmail,
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Errors,
+		&i.ScrapeBegin,
+		&i.ScrapeEnd,
+	)
+	return i, err
+}
+
+const createHylScrapeSession = `-- name: CreateHylScrapeSession :one
+INSERT INTO hyl_scrape_session (created_by_email)
+    VALUES ($1) RETURNING id, created_by_email, description, created_at, updated_at, errors, scrape_begin, scrape_end
+`
+
+func (q *Queries) CreateHylScrapeSession(ctx context.Context, createdByEmail string) (HylScrapeSession, error) {
+	row := q.db.QueryRow(ctx, createHylScrapeSession, createdByEmail)
+	var i HylScrapeSession
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedByEmail,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Errors,
+		&i.ScrapeBegin,
+		&i.ScrapeEnd,
 	)
 	return i, err
 }
@@ -250,7 +275,7 @@ func (q *Queries) GetHylPostsBySession(ctx context.Context, sessionID int64) ([]
 }
 
 const getHylScrapeSessionByEmail = `-- name: GetHylScrapeSessionByEmail :many
-SELECT id, target, created_by_email, description, created_at, updated_at FROM hyl_scrape_session WHERE created_by_email = $1
+SELECT id, created_by_email, description, created_at, updated_at, errors, scrape_begin, scrape_end FROM hyl_scrape_session WHERE created_by_email = $1
 `
 
 func (q *Queries) GetHylScrapeSessionByEmail(ctx context.Context, createdByEmail string) ([]HylScrapeSession, error) {
@@ -264,11 +289,13 @@ func (q *Queries) GetHylScrapeSessionByEmail(ctx context.Context, createdByEmail
 		var i HylScrapeSession
 		if err := rows.Scan(
 			&i.ID,
-			&i.Target,
 			&i.CreatedByEmail,
 			&i.Description,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Errors,
+			&i.ScrapeBegin,
+			&i.ScrapeEnd,
 		); err != nil {
 			return nil, err
 		}
@@ -281,7 +308,7 @@ func (q *Queries) GetHylScrapeSessionByEmail(ctx context.Context, createdByEmail
 }
 
 const getHylScrapeSessionById = `-- name: GetHylScrapeSessionById :one
-SELECT id, target, created_by_email, description, created_at, updated_at FROM hyl_scrape_session WHERE id = $1
+SELECT id, created_by_email, description, created_at, updated_at, errors, scrape_begin, scrape_end FROM hyl_scrape_session WHERE id = $1
 `
 
 func (q *Queries) GetHylScrapeSessionById(ctx context.Context, id int64) (HylScrapeSession, error) {
@@ -289,11 +316,51 @@ func (q *Queries) GetHylScrapeSessionById(ctx context.Context, id int64) (HylScr
 	var i HylScrapeSession
 	err := row.Scan(
 		&i.ID,
-		&i.Target,
 		&i.CreatedByEmail,
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Errors,
+		&i.ScrapeBegin,
+		&i.ScrapeEnd,
+	)
+	return i, err
+}
+
+const updateHylScraperSession = `-- name: UpdateHylScraperSession :one
+UPDATE hyl_scrape_session
+SET
+    description = COALESCE($1, description),
+    scrape_begin = COALESCE($2, scrape_begin),
+    scrape_end = COALESCE($3, scrape_end)
+WHERE id = $4
+RETURNING id, created_by_email, description, created_at, updated_at, errors, scrape_begin, scrape_end
+`
+
+type UpdateHylScraperSessionParams struct {
+	Description pgtype.Text        `json:"description"`
+	ScrapeBegin pgtype.Timestamptz `json:"scrape_begin"`
+	ScrapeEnd   pgtype.Timestamptz `json:"scrape_end"`
+	ID          int64              `json:"id"`
+}
+
+func (q *Queries) UpdateHylScraperSession(ctx context.Context, arg UpdateHylScraperSessionParams) (HylScrapeSession, error) {
+	row := q.db.QueryRow(ctx, updateHylScraperSession,
+		arg.Description,
+		arg.ScrapeBegin,
+		arg.ScrapeEnd,
+		arg.ID,
+	)
+	var i HylScrapeSession
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedByEmail,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Errors,
+		&i.ScrapeBegin,
+		&i.ScrapeEnd,
 	)
 	return i, err
 }

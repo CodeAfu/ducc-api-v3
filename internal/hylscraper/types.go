@@ -1,9 +1,16 @@
 package hylscraper
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 )
+
+type scraperContext struct {
+	id      int64
+	context context.Context
+	cancel  context.CancelFunc
+}
 
 type ScraperStatus string
 

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
+	"github.com/CodeAfu/go-ducc-api/internal/adapters/storage"
+	"github.com/CodeAfu/go-ducc-api/internal/agreegen"
 	"github.com/CodeAfu/go-ducc-api/internal/bingo"
 	"github.com/CodeAfu/go-ducc-api/internal/genshin"
 	"github.com/CodeAfu/go-ducc-api/internal/hylscraper"
@@ -95,10 +97,11 @@ func (app *application) mount() http.Handler {
 
 	// HoyoLab Scraper
 	hylscraperService := hylscraper.NewService(repo.New(app.db), app.db, !isDev)
-	hylscraperHandler := hylscraper.NewHandler(hylscraperService)
+	hylscraperHandler := hylscraper.NewHandler(hylscraperService, isDev)
 	r.Group(func(r chi.Router) {
 		// r.Use(app.onlyAllowedOrigins)
-		r.Get("/api/v3/hylscraper/scrape", hylscraperHandler.Scrape)
+		r.Post("/api/v3/hylscraper/scrape", hylscraperHandler.Init)
+		// r.Get("/api/v3/hylscraper/scrape", hylscraperHandler.Scrape)
 		r.Get("/api/v3/hylscraper/{id}/subscribe", hylscraperHandler.StreamUpdates)
 	})
 
@@ -135,6 +138,16 @@ func (app *application) mount() http.Handler {
 		r.Put("/api/v3/genshin/profiles/{prof_id}/{char_id}", genshinHandler.EditCharFromProfile)
 		r.Delete("/api/v3/genshin/profiles/{prof_id}/{char_id}", genshinHandler.DeleteCharFromProfile)
 		r.Get("/api/v3/genshin/profiles/{id}/stats", genshinHandler.GetProfileStats)
+	})
+
+	// Agreement Generator
+	agreeService := agreegen.NewService(repo.New(app.db), app.db, app.s3Client)
+	agreeHandler := agreegen.NewHandler(agreeService)
+	r.Group(func(r chi.Router) {
+		// r.Use(clerkhttp.RequireHeaderAuthorization())
+		// r.Use(app.onlyAllowedOrigins)
+		r.Post("/api/v3/agreement-generator/preview", agreeHandler.PreviewDocument)
+		r.Post("/api/v3/agreement-generator/download", agreeHandler.DownloadDocument)
 	})
 
 	return r
@@ -197,8 +210,9 @@ func slogLogger(next http.Handler) http.Handler {
 }
 
 type application struct {
-	config config
-	db     *pgxpool.Pool
+	config   config
+	db       *pgxpool.Pool
+	s3Client *storage.S3Client
 }
 
 type dbConfig struct {
@@ -209,9 +223,14 @@ type config struct {
 	env           string
 	addr          string
 	db            dbConfig
-	clerk         clerkConfig
 	corsOrigins   []string
+	clerk         clerkConfig
 	internalToken string
+
+	awsAccessKeyId     string
+	awsSecretAccessKey string
+	awsRegion          string
+	s3BucketName       string
 }
 
 type clerkConfig struct {

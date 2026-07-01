@@ -11,6 +11,7 @@ import (
 
 	_ "github.com/CodeAfu/go-ducc-api/docs"
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/env/envutils"
+	"github.com/CodeAfu/go-ducc-api/internal/adapters/storage"
 	"github.com/clerk/clerk-sdk-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -47,9 +48,16 @@ func main() {
 
 	logger.Info("connected to database")
 
+	s3Client, err := storage.NewS3Client(ctx, cfg.awsRegion, cfg.awsAccessKeyId, cfg.awsSecretAccessKey, cfg.s3BucketName)
+	if err != nil {
+		slog.Error("failed to retrieve s3 client", "err", err)
+		os.Exit(1)
+	}
+
 	app := application{
-		config: cfg,
-		db:     conn,
+		config:   cfg,
+		db:       conn,
+		s3Client: s3Client,
 	}
 
 	h := app.mount()
@@ -108,6 +116,26 @@ func loadConfig() (config, error) {
 		return config{}, fmt.Errorf("INTERNAL_TOKEN: %w", err)
 	}
 
+	awsAccessKeyId, err := envutils.GetString("AWS_ACCESS_KEY_ID")
+	if err != nil {
+		return config{}, fmt.Errorf("AWS_ACCESS_KEY_ID: %w", err)
+	}
+
+	awsSecretAccessKey, err := envutils.GetString("AWS_SECRET_ACCESS_KEY")
+	if err != nil {
+		return config{}, fmt.Errorf("AWS_SECRET_ACCESS_KEY: %w", err)
+	}
+
+	awsRegion, err := envutils.GetString("AWS_REGION")
+	if err != nil {
+		return config{}, fmt.Errorf("AWS_REGION: %w", err)
+	}
+
+	s3BucketName, err := envutils.GetString("S3_BUCKET_NAME")
+	if err != nil {
+		return config{}, fmt.Errorf("S3_BUCKET_NAME: %w", err)
+	}
+
 	envVar, err := envutils.GetString("ENV")
 	if err != nil {
 		return config{}, fmt.Errorf("ENV: %w", err)
@@ -140,11 +168,15 @@ func loadConfig() (config, error) {
 	}
 
 	return config{
-		env:           envVar,
-		addr:          ":" + port,
-		internalToken: internalToken,
-		db:            dbConfig{dsn: dsn},
-		clerk:         clerkConfig{key: clerkKey},
-		corsOrigins:   strings.Split(corsOrigins, ","),
+		env:                envVar,
+		addr:               ":" + port,
+		internalToken:      internalToken,
+		db:                 dbConfig{dsn: dsn},
+		clerk:              clerkConfig{key: clerkKey},
+		corsOrigins:        strings.Split(corsOrigins, ","),
+		awsAccessKeyId:     awsAccessKeyId,
+		awsSecretAccessKey: awsSecretAccessKey,
+		awsRegion:          awsRegion,
+		s3BucketName:       s3BucketName,
 	}, nil
 }
