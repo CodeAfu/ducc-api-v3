@@ -141,7 +141,7 @@ func (app *application) mount() http.Handler {
 	})
 
 	// Agreement Generator
-	agreeService := agreegen.NewService(repo.New(app.db), app.db, app.s3Client)
+	agreeService := agreegen.NewService(repo.New(app.db), app.db, app.s3Client, app.config.env == "development")
 	agreeHandler := agreegen.NewHandler(agreeService)
 	r.Group(func(r chi.Router) {
 		// r.Use(clerkhttp.RequireHeaderAuthorization())
@@ -195,6 +195,10 @@ func (app *application) runGRPC() error {
 
 func slogLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v3/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)

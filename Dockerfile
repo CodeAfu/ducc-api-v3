@@ -15,7 +15,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     curl \
-    libreoffice-writer \
+    libreoffice-writer-nogui \
     fonts-liberation \
     fontconfig \
     python3 \
@@ -33,8 +33,7 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY scripts/ /app/scripts/
 COPY templates/ /app/templates/
 COPY templates/fonts/ usr/share/fonts/custom/
-RUN python3 -m venv /app/scripts/.venv && \
-    /app/scripts/.venv/bin/pip install --no-cache-dir -r /app/scripts/requirements.txt
+RUN pip3 install --break-system-packages --no-cache-dir -r /app/scripts/requirements.txt
 RUN fc-cache -fv
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \

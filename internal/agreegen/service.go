@@ -3,13 +3,16 @@ package agreegen
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/cache"
@@ -24,45 +27,44 @@ type Service interface {
 }
 
 type svc struct {
-	repo *repo.Queries
-	db   *pgxpool.Pool
-	s3   *storage.S3Client
+	repo  *repo.Queries
+	db    *pgxpool.Pool
+	s3    *storage.S3Client
+	isDev bool
 }
 
-func NewService(repo *repo.Queries, db *pgxpool.Pool, s3 *storage.S3Client) Service {
+func NewService(repo *repo.Queries, db *pgxpool.Pool, s3 *storage.S3Client, isDev bool) Service {
 	return &svc{
-		repo: repo,
-		db:   db,
-		s3:   s3,
+		repo:  repo,
+		db:    db,
+		s3:    s3,
+		isDev: isDev,
 	}
 }
 
 func (s *svc) PreviewDocument(ctx context.Context, req *documentRequest) (string, error) {
-	agreementDates, err := getAgreementDates(req.AgreementDuration)
+	agreementDates, err := getAgreementDates(req.AgreementStart, req.AgreementDuration)
 	if err != nil {
 		return "", err
 	}
-	startDateDhivehi, err := dateToDhivehi(agreementDates.Start)
+	replaceMap, err := s.buildReplaceMap(req, agreementDates)
 	if err != nil {
 		return "", err
 	}
-	endDateDhivehi, err := dateToDhivehi(agreementDates.End)
+	hash, _, err := hashReplaceMap(replaceMap)
 	if err != nil {
 		return "", err
 	}
-	cKey := fmt.Sprintf("agreement-generator:preview:%s:%s:%s:%s:%s:%s",
-		req.TenantInfo, req.RentAmountStr, req.RentAmountNumStr,
-		req.FloorNum, startDateDhivehi, endDateDhivehi,
-	)
+	previewCKey := "agreement-generator:preview:" + hash
 
 	c := cache.GetInstance()
-	if cached, ok := c.Get(cKey); ok {
+	if cached, ok := c.Get(previewCKey); ok {
 		if pdf, ok := cached.(string); ok {
 			return pdf, nil
 		}
 	}
 
-	docBytes, err := createDocument(ctx, req)
+	docBytes, err := s.createDocument(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("failed to create document: %w", err)
 	}
@@ -96,58 +98,36 @@ func (s *svc) PreviewDocument(ctx context.Context, req *documentRequest) (string
 	}
 
 	b64 := base64.StdEncoding.EncodeToString(pdfBytes)
-	c.Set(cKey, b64, time.Minute*5)
+	c.Set(previewCKey, b64, time.Minute*30)
 
 	return b64, nil
 }
 
 func (s *svc) CreateDocument(ctx context.Context, req *documentRequest) ([]byte, error) {
-	return createDocument(ctx, req)
+	return s.createDocument(ctx, req)
 }
 
-func createDocument(ctx context.Context, req *documentRequest) ([]byte, error) {
-	agreementDates, err := getAgreementDates(req.AgreementDuration)
+func (s *svc) createDocument(ctx context.Context, req *documentRequest) ([]byte, error) {
+	agreementDates, err := getAgreementDates(req.AgreementStart, req.AgreementDuration)
 	if err != nil {
 		return nil, err
 	}
-	startDateDhivehi, err := dateToDhivehi(agreementDates.Start)
+	replaceMap, err := s.buildReplaceMap(req, agreementDates)
 	if err != nil {
 		return nil, err
 	}
-	endDateDhivehi, err := dateToDhivehi(agreementDates.End)
+	hash, jsonBytes, err := hashReplaceMap(replaceMap)
 	if err != nil {
 		return nil, err
 	}
+	cKey := "agreement-generator:create:" + hash
+	slog.Debug("cache key (agreement create)", "key", cKey)
 
-	replaceMap := map[string]string{
-		"ޓެނަންޓްމައުލޫމާތު":     req.TenantInfo,
-		"ޓެނަންޓްފޯނުނަންބަރު":   req.TenantPhoneNumber,
-		"ރެންޓްސްޓްރިންގް":       req.RentAmountStr,
-		"ރެންޓްނަންބަރު":         req.RentAmountNumStr,
-		"ފްލޯނަންބަރު":           req.FloorNum,
-		"އެގްރީމަންޓްފެށޭތާރީހް": startDateDhivehi,
-		"އެގްރީމަންޓްނިމޭތާރީހް": endDateDhivehi,
-	}
-
-	cKey := fmt.Sprintf("agreement-generator:create:%s:%s:%s:%s:%s:%s:%s",
-		req.TenantInfo,
-		req.TenantPhoneNumber,
-		req.RentAmountStr,
-		req.RentAmountNumStr,
-		req.FloorNum,
-		agreementDates.Start.Format(time.DateOnly),
-		agreementDates.End.Format(time.DateOnly),
-	)
 	c := cache.GetInstance()
 	if cached, ok := c.Get(cKey); ok {
 		if docBytes, ok := cached.([]byte); ok {
 			return docBytes, nil
 		}
-	}
-
-	jsonBytes, err := json.Marshal(replaceMap)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal replacements: %w", err)
 	}
 
 	tmpDir, err := os.MkdirTemp("", "agreegen-*")
@@ -156,7 +136,11 @@ func createDocument(ctx context.Context, req *documentRequest) ([]byte, error) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	cmd := exec.CommandContext(ctx, "scripts/.venv/bin/python3",
+	pythonBin := "python3"
+	if s.isDev {
+		pythonBin = "scripts/.venv/bin/python3"
+	}
+	cmd := exec.CommandContext(ctx, pythonBin,
 		"scripts/render-agreement.py",
 		"--template", "templates/agreement_template.docx",
 		"--output-dir", tmpDir,
@@ -174,26 +158,69 @@ func createDocument(ctx context.Context, req *documentRequest) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read rendered document: %w", err)
 	}
 
-	c.Set(cKey, docBytes, time.Minute*5)
+	c.Set(cKey, docBytes, time.Minute*30)
 
 	return docBytes, nil
 }
 
-func getAgreementDates(duration int) (*agreementStartEndDates, error) {
+func (s *svc) buildReplaceMap(req *documentRequest, dates *agreementStartEndDates) (map[string]string, error) {
+	startDateDhivehi, err := dateToDhivehi(dates.Start)
+	if err != nil {
+		return nil, err
+	}
+	endDateDhivehi, err := dateToDhivehi(dates.End)
+	if err != nil {
+		return nil, err
+	}
+
+	replaceMap := map[string]string{
+		"ޓެނަންޓްމައުލޫމާތު":     req.TenantInfo,
+		"ރެންޓްއެމައުންޓް":       req.RentAmountStr,
+		"ވަންޑިޕޮސިޓް":           req.SingleDeposit,
+		"ފްލޯނަންބަރު":           req.FloorNum,
+		"އެގްރީމަންޓްފެށޭތާރީހް": startDateDhivehi,
+		"އެގްރީމަންޓްނިމޭތާރީހް": endDateDhivehi,
+		"އެގްރީމަންޓްމުއްދަތު":   strconv.Itoa(req.AgreementDuration),
+	}
+	if req.SigFieldTenantName != "" {
+		replaceMap["ސައިންޓެނަންޓްނަން"] = req.SigFieldTenantName
+	}
+	if req.SigFieldTenantId != "" {
+		replaceMap["ސައިންޓެނަންޓްއައިޑީ"] = req.SigFieldTenantId
+	}
+	if req.SigFieldTenantAddress != "" {
+		replaceMap["ސައިންޓެނަންޓްއެޑްރެސް"] = req.SigFieldTenantAddress
+	}
+	if req.TenantPhoneNumber != "" {
+		replaceMap["ޓެނަންޓްފޯނުނަންބަރު"] = req.TenantPhoneNumber
+	}
+	return replaceMap, nil
+}
+
+func hashReplaceMap(replaceMap map[string]string) (string, []byte, error) {
+	jsonBytes, err := json.Marshal(replaceMap)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to marshal replacements: %w", err)
+	}
+	h := sha256.Sum256(jsonBytes)
+	return fmt.Sprintf("%x", h), jsonBytes, nil
+}
+
+func getAgreementDates(startDate time.Time, duration int) (*agreementStartEndDates, error) {
 	loc, err := time.LoadLocation("Indian/Maldives")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load timezone: %w", err)
 	}
 
-	startDate := time.Now().In(loc)
-	endDate := calcAgreementEnd(startDate, duration)
-
-	dates := agreementStartEndDates{
-		Start: startDate,
-		End:   endDate,
+	if startDate.IsZero() {
+		startDate = time.Now().In(loc)
+	} else {
+		startDate = startDate.In(loc)
 	}
 
-	return &dates, nil
+	endDate := calcAgreementEnd(startDate, duration)
+
+	return &agreementStartEndDates{Start: startDate, End: endDate}, nil
 }
 
 func dateToDhivehi(date time.Time) (string, error) {
@@ -209,18 +236,18 @@ func dateToDhivehi(date time.Time) (string, error) {
 
 func monthToDhivehi(month time.Month) (string, error) {
 	monthMap := map[time.Month]string{
-		time.January:   "",
-		time.February:  "",
-		time.March:     "",
-		time.April:     "",
-		time.May:       "",
-		time.June:      "",
-		time.July:      "",
-		time.August:    "",
-		time.September: "",
-		time.October:   "",
-		time.November:  "",
-		time.December:  "",
+		time.January:   "ޖަނަވަރީ",
+		time.February:  "ފެބްރުއަރީ",
+		time.March:     "މާޗް",
+		time.April:     "އެޕްރިލް",
+		time.May:       "މެއި",
+		time.June:      "ޖޫން",
+		time.July:      "ޖުލައި",
+		time.August:    "އޯގަސްޓް",
+		time.September: "ސެޕްޓެމްބަރ",
+		time.October:   "އޮކްޓޯބަރ",
+		time.November:  "ނޮވެމްބަރ",
+		time.December:  "ޑިސެމްބަރ",
 	}
 
 	monthDhivehi, ok := monthMap[month]
@@ -235,4 +262,31 @@ func calcAgreementEnd(date time.Time, numYears int) time.Time {
 	anniversary := date.AddDate(numYears, 0, 0)
 	firstOfMonth := time.Date(anniversary.Year(), anniversary.Month(), 1, 0, 0, 0, 0, anniversary.Location())
 	return firstOfMonth.AddDate(0, 0, -1)
+}
+
+func formatRentAmountNumStr(rentAmountNumStr string) (string, error) {
+	n, err := strconv.Atoi(rentAmountNumStr)
+	if err != nil {
+		return "", fmt.Errorf("rent amount is not a valid integer: %s", err)
+	}
+
+	s := strconv.Itoa(n)
+	neg := strings.HasPrefix(s, "-")
+	if neg {
+		s = s[1:]
+	}
+
+	var parts []string
+	for len(s) > 3 {
+		parts = append([]string{s[len(s)-3:]}, parts...)
+		s = s[:len(s)-3]
+	}
+	parts = append([]string{s}, parts...)
+
+	result := strings.Join(parts, "،")
+	if neg {
+		result = "-" + result
+	}
+
+	return result, nil
 }
