@@ -134,7 +134,7 @@ func (h *handler) EditGenshinChar(w http.ResponseWriter, r *http.Request) {
 	}
 	c := cache.GetInstance()
 	c.ClearKey(cache.GenshinCharsAllKey)
-	c.Set(cache.GenshinCharKey(id), char, time.Minute*120)
+	c.ClearKey(cache.GenshinCharKey(id))
 	httputil.Write(w, http.StatusOK, char)
 }
 
@@ -281,8 +281,7 @@ func (h *handler) EditGenshinProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := cache.GetInstance()
-	cacheKey := cache.GenshinProfKey(profId)
-	c.Set(cacheKey, profile, time.Minute*60)
+	c.ClearKey(cache.GenshinProfKey(profId))
 	c.ClearKey(cache.GenshinProfStatsKey(profId))
 	httputil.Write(w, http.StatusOK, profile)
 }
@@ -300,8 +299,9 @@ func (h *handler) DeleteGenshinProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	cache.GetInstance().ClearKey(cache.GenshinProfKey(id))
-	cache.GetInstance().ClearKey(cache.GenshinProfStatsKey(id))
+	c := cache.GetInstance()
+	c.ClearKey(cache.GenshinProfKey(id))
+	c.ClearKey(cache.GenshinProfStatsKey(id))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -336,8 +336,7 @@ func (h *handler) AddCharToProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := cache.GetInstance()
-	cacheKey := cache.GenshinProfCharsKey(profId)
-	c.Set(cacheKey, resp, time.Minute*60)
+	c.ClearKey(cache.GenshinProfCharsKey(profId))
 	c.ClearKey(cache.GenshinProfStatsKey(profId))
 	httputil.Write(w, http.StatusCreated, resp)
 }
@@ -368,8 +367,7 @@ func (h *handler) EditCharFromProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := cache.GetInstance()
-	cacheKey := cache.GenshinProfCharsKey(profId)
-	c.Set(cacheKey, resp, time.Minute*60)
+	c.ClearKey(cache.GenshinProfCharsKey(profId))
 	c.ClearKey(cache.GenshinProfStatsKey(profId))
 	httputil.Write(w, http.StatusOK, resp)
 }
@@ -395,8 +393,9 @@ func (h *handler) DeleteCharFromProfile(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	cache.GetInstance().ClearKey(cache.GenshinProfCharsKey(profId))
-	cache.GetInstance().ClearKey(cache.GenshinProfStatsKey(profId))
+	c := cache.GetInstance()
+	c.ClearKey(cache.GenshinProfCharsKey(profId))
+	c.ClearKey(cache.GenshinProfStatsKey(profId))
 	w.WriteHeader(http.StatusNoContent)
 }
 
