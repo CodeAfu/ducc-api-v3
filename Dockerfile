@@ -32,7 +32,7 @@ COPY --from=builder /app/server /app/server
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY scripts/ /app/scripts/
 COPY templates/ /app/templates/
-COPY templates/fonts/ usr/share/fonts/custom/
+# COPY templates/fonts/ usr/share/fonts/custom/
 RUN pip3 install --break-system-packages --no-cache-dir -r /app/scripts/requirements.txt
 RUN fc-cache -fv
 
