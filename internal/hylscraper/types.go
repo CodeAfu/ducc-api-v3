@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
 )
 
 type scraperContext struct {
@@ -35,13 +37,14 @@ type LinkResult struct {
 }
 
 type ScrapeData struct {
-	Id        int64         `json:"id"`
-	Permalink string        `json:"permalink"`
-	Title     string        `json:"title"`
-	Author    string        `json:"author"`
-	Content   string        `json:"content"`
-	ScrapedAt time.Time     `json:"scraped_at"`
-	Duration  time.Duration `json:"-"`
+	SessionID int64           `json:"session_id"`
+	Permalink string          `json:"permalink"`
+	Title     string          `json:"title"`
+	Author    string          `json:"author"`
+	Content   string          `json:"content"`
+	Comments  []ScrapeComment `json:"-"`
+	ScrapedAt time.Time       `json:"scraped_at"`
+	Duration  time.Duration   `json:"-"`
 }
 
 func (s ScrapeData) MarshalJSON() ([]byte, error) {
@@ -53,4 +56,10 @@ func (s ScrapeData) MarshalJSON() ([]byte, error) {
 		Alias:    (*Alias)(&s),
 		Duration: s.Duration.String(),
 	})
+}
+
+type NotifyPayload struct {
+	SessionID int64           `json:"session_id"`
+	Post      repo.HylPost    `json:"post"`
+	Comment   repo.HylComment `json:"comment"`
 }

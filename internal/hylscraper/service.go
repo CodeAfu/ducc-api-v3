@@ -2,6 +2,7 @@ package hylscraper
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
@@ -22,7 +23,7 @@ type Service interface {
 	// Stream(ctx context.Context, id int64) (idk) // TODO: MAKE ASAP
 	// Scrape(sessionId int64, limit int) (<-chan LinkResult, error)
 	// StreamLinks(id int64) (<-chan ScrapeData, error)
-	Subscribe(ctx context.Context, sessionID int64) error
+	Subscribe(ctx context.Context, sessionID int64, send func([]byte)) error
 }
 
 // type session struct {
@@ -77,38 +78,39 @@ func (s *svc) Init(ctx context.Context, email string, limit int) (repo.HylScrape
 		cancel:  jobCancel,
 	})
 
-	// go func() {
-	// 	defer s.removeContext(session.ID)
-	// 	defer jobCancel()
-	//
-	// 	_, err := s.scrape(jobCtx, jobCancel, session.ID, limit)
-	// 	if err != nil {
-	// 		slog.Error("error while scraping", "err", err)
-	// 	}
-	// }()
+	go func() {
+		defer s.removeContext(session.ID)
+
+		_, err := s.scrape(jobCtx, jobCancel, session.ID, limit)
+		if err != nil {
+			slog.Error("error while scraping", "err", err)
+			jobCancel()
+		}
+	}()
 
 	return session, nil
 }
 
-func (s *svc) Subscribe(ctx context.Context, sessionID int64) error {
-	// conn, err := s.db.Acquire(ctx)
-	// if err != nil {
-	// 	return err
-	// }
-	// defer conn.Release()
-	//
-	// payloadChan := make(chan string)
-	//
-	// conn.Exec(ctx, "LISTEN scrape_events")
-	// for {
-	// 	notif, err := conn.Conn().WaitForNotification(ctx)
-	// 	if err != nil {
-	// 		break
-	// 	}
-	// 	payloadChan <- notif.Payload
-	// }
+func (s *svc) Subscribe(ctx context.Context, sessionID int64, send func([]byte)) error {
+	conn, err := s.db.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
 
-	return fmt.Errorf("function not implemented")
+	channel := fmt.Sprintf("hyl_scrape_%d", sessionID)
+	if _, err := conn.Exec(ctx, "LISTEN "+channel); err != nil {
+		return err
+	}
+
+	for {
+		notif, err := conn.Conn().WaitForNotification(ctx)
+		if err != nil {
+			return err
+		}
+		send([]byte("data: " + notif.Payload + "\n\n"))
+	}
+
 }
 
 func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessionId int64, limit int) (<-chan LinkResult, error) {
@@ -118,11 +120,8 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 		chromedp.NoSandbox,
 	)
 
-	// jobCtx, jobCancel := context.WithTimeout(context.Background(), 60*time.Minute)
-
 	tx, err := s.db.BeginTx(jobCtx, pgx.TxOptions{})
 	if err != nil {
-		jobCancel()
 		return nil, err
 	}
 	defer tx.Rollback(jobCtx)
@@ -133,7 +132,6 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 	workerCh := make(chan LinkResult, limit)
 
 	abort := func() {
-		jobCancel()
 		close(linksCh)
 		close(frontendCh)
 		close(workerCh)
@@ -187,7 +185,9 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 	// 3. Tab Workers
 	numTabs := int(math.Min(float64(runtime.NumCPU()), 5))
 	resCh := scraperutils.FanOut(jobCtx, workerCh, numTabs, func(link LinkResult) ScrapeData {
-		return scrapeTab(browserCtx, link)
+		res := s.scrapeTab(browserCtx, link)
+		res.SessionID = sessionId
+		return res
 	})
 
 	// 4. Persistence & Cleanup
@@ -198,20 +198,26 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 
 		idx := 0
 		for res := range resCh {
-			if res.Permalink != "" {
-				slog.Info("hyl scrape data",
-					"id", idx,
-					"url", res.Permalink,
-					"author", res.Author,
-					"title", res.Title,
-					"duration", res.Duration.String(),
-				)
-				idx++
+			if res.Permalink == "" {
+				continue
 			}
+
+			if err := s.persistResult(jobCtx, res); err != nil {
+				slog.Error("persist failed", "err", err)
+				continue
+			}
+
+			slog.Debug("hyl scrape data",
+				"id", idx,
+				"url", res.Permalink,
+				"author", res.Author,
+				"title", res.Title,
+				"duration", res.Duration.String(),
+			)
+			idx++
 		}
 		elapsed := float64(time.Since(start).Milliseconds()) / 1000.0
 		slog.Info("scrape job completed and chrome process killed", "duration_s", elapsed)
-
 	}()
 
 	return frontendCh, nil
@@ -221,7 +227,7 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 // 	return s.subscribers[id], nil
 // }
 
-func scrapeTab(browserCtx context.Context, linkResult LinkResult) ScrapeData {
+func (s *svc) scrapeTab(browserCtx context.Context, linkResult LinkResult) ScrapeData {
 	start := time.Now()
 
 	result := ScrapeData{
@@ -242,6 +248,7 @@ func scrapeTab(browserCtx context.Context, linkResult LinkResult) ScrapeData {
 	var actions []chromedp.Action
 	actions = append(actions, chromedp.Navigate(linkResult.Url))
 	actions = append(actions, chromedp.WaitVisible(`body`, chromedp.ByQuery))
+	actions = append(actions, chromedp.Sleep(scraperutils.SleepRangeMs(3000, 7000)))
 	actions = append(actions, chromedp.Sleep(scraperutils.SleepRangeMs(3000, 7000)))
 
 	if result.Title == "" {
@@ -330,6 +337,58 @@ func getLinks(browserCtx context.Context, linksCh chan<- LinkResult, limit int) 
 
 	time.Sleep(time.Second * 5)
 	return nil
+}
+
+func (s *svc) persistResult(jobCtx context.Context, res ScrapeData) error {
+	tx, err := s.db.BeginTx(jobCtx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(jobCtx)
+
+	qtx := s.repo.WithTx(tx)
+
+	post, err := qtx.AddHylPost(jobCtx, repo.AddHylPostParams{
+		SessionID: res.SessionID,
+		Url:       res.Permalink,
+		Author:    res.Author,
+		Title:     res.Title,
+		Content:   res.Content,
+	})
+	if err != nil {
+		return fmt.Errorf("AddHylPost: %w", err)
+	}
+
+	for _, c := range res.Comments {
+		_, err := qtx.AddHylComment(jobCtx, repo.AddHylCommentParams{
+			SessionID:       res.SessionID,
+			PostID:          post.ID,
+			ParentCommentID: pgtype.Int8{Valid: false}, // TODO: impl properly
+			Url:             res.Permalink,
+			Author:          c.Author,
+			Content:         c.Content,
+		})
+		if err != nil {
+			// tx.Rollback(jobCtx)
+			slog.Error("AddHylComment failed", "err", err)
+			// continue
+		}
+	}
+
+	channel := fmt.Sprintf("hyl_scrape_%d", res.SessionID)
+
+	payload, err := json.Marshal(post)
+	if err != nil {
+		slog.Error("Failed to marshal json for post", "err", err, "postId", post.ID)
+	}
+	_, err = tx.Exec(jobCtx,
+		"SELECT pg_notify($1, $2)", channel, string(payload),
+	)
+	if err != nil {
+		slog.Error("pg_notify failed", "err", err)
+	}
+
+	return tx.Commit(jobCtx)
 }
 
 // func (s *svc) publish(id int64, res LinkResult) {

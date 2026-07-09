@@ -1,11 +1,12 @@
 package hylscraper
 
 import (
-	// "encoding/json"
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/http/httputil"
 	"github.com/go-chi/chi/v5"
@@ -37,7 +38,6 @@ func (h *handler) Init(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no email found on auth header", http.StatusBadRequest)
 		return
 	}
-
 	limitStr := r.URL.Query().Get("limit")
 	if limitStr == "" {
 		slog.Error("limit param is null")
@@ -152,6 +152,12 @@ func (h *handler) StreamUpdates(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
 	email, ok := httputil.GetEmailFromAuthHeader(r)
 	if !ok {
 		http.Error(w, "You are not authorized to use this endpoint", http.StatusUnauthorized)
@@ -171,14 +177,17 @@ func (h *handler) StreamUpdates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("streaming scrape session posts and comments", "id", sessionId, "email", email)
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
-		return
+	ctx, cancel := context.WithTimeout(r.Context(), time.Minute*120)
+	defer cancel()
+	err = h.service.Subscribe(ctx, sessionId, func(payload []byte) {
+		fmt.Fprintf(w, "data: %s\n\n", payload)
+		flusher.Flush()
+	})
+	if err != nil && ctx.Err() == nil {
+		slog.Error("subscribe error", "err", err)
 	}
-
-	// svc that interacts with db
-
+	if ctx.Err() != nil {
+		slog.Error("context cancelled by user or timeout", "err", err)
+	}
 	flusher.Flush()
 }
