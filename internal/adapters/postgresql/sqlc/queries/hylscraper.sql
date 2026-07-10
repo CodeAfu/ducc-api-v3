@@ -41,6 +41,16 @@ INSERT INTO hyl_comments (session_id, post_id, parent_comment_id, url, author, c
     VALUES ($1, $2, $3, $4, $5, $6)
     RETURNING *;
 
+-- name: AddHylComments :many
+INSERT INTO hyl_comments (session_id, post_id, url, author, content)
+SELECT
+    unnest(sqlc.arg(session_id)::bigint[]),
+    unnest(sqlc.arg(post_id)::bigint[]),
+    unnest(sqlc.arg(url)::text[]),
+    unnest(sqlc.arg(author)::text[]),
+    unnest(sqlc.arg(content)::text[])
+RETURNING *;
+
 
 -- name: GetHylPostsBySession :many
 SELECT * FROM hyl_posts WHERE session_id = $1;

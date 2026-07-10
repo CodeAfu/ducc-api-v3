@@ -47,11 +47,11 @@ func (h *handler) Init(w http.ResponseWriter, r *http.Request) {
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		slog.Error("invalid limit param", "error", err.Error())
+		slog.Error("invalid limit param", "err", err.Error())
 		return
 	}
 	if limit > SCRAPER_UPPER_LIMIT || limit <= 0 {
-		slog.Error("invalid limit param", "error", fmt.Sprintf("limit must be between %d and %d", 0, SCRAPER_UPPER_LIMIT))
+		slog.Error("invalid limit param", "err", fmt.Sprintf("limit must be between %d and %d", 0, SCRAPER_UPPER_LIMIT))
 		http.Error(w, fmt.Sprintf("1 <= limit <= %d", SCRAPER_UPPER_LIMIT), http.StatusBadRequest)
 		return
 	}
@@ -187,7 +187,7 @@ func (h *handler) StreamUpdates(w http.ResponseWriter, r *http.Request) {
 		slog.Error("subscribe error", "err", err)
 	}
 	if ctx.Err() != nil {
-		slog.Error("context cancelled by user or timeout", "err", err)
+		slog.Error("context error (timeout or cancelled by user)", "err", err)
 	}
 	flusher.Flush()
 }

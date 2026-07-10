@@ -72,16 +72,18 @@ func (s *svc) Init(ctx context.Context, email string, limit int) (repo.HylScrape
 
 	// Use context.Background() because s.scrape() is a fire and forget task
 	jobCtx, jobCancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	s.mu.Lock()
 	s.contexts = append(s.contexts, scraperContext{
 		id:      session.ID,
 		context: jobCtx,
 		cancel:  jobCancel,
 	})
+	s.mu.Unlock()
 
 	go func() {
 		defer s.removeContext(session.ID)
 
-		_, err := s.scrape(jobCtx, jobCancel, session.ID, limit)
+		err := s.scrape(jobCtx, jobCancel, session.ID, limit)
 		if err != nil {
 			slog.Error("error while scraping", "err", err)
 			jobCancel()
@@ -108,12 +110,11 @@ func (s *svc) Subscribe(ctx context.Context, sessionID int64, send func([]byte))
 		if err != nil {
 			return err
 		}
-		send([]byte("data: " + notif.Payload + "\n\n"))
+		send([]byte(notif.Payload))
 	}
-
 }
 
-func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessionId int64, limit int) (<-chan LinkResult, error) {
+func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessionId int64, limit int) error {
 	start := time.Now()
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", s.headless),
@@ -122,18 +123,16 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 
 	tx, err := s.db.BeginTx(jobCtx, pgx.TxOptions{})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer tx.Rollback(jobCtx)
 	qtx := s.repo.WithTx(tx)
 
 	linksCh := make(chan LinkResult)
-	frontendCh := make(chan LinkResult, 100)
 	workerCh := make(chan LinkResult, limit)
 
 	abort := func() {
 		close(linksCh)
-		close(frontendCh)
 		close(workerCh)
 	}
 
@@ -143,12 +142,12 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 	})
 	if err != nil {
 		abort()
-		return nil, err
+		return err
 	}
 
 	if err := tx.Commit(jobCtx); err != nil {
 		abort()
-		return nil, err
+		return err
 	}
 
 	slog.Info("session", "data", session)
@@ -167,13 +166,8 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 
 	// 2. Distributor
 	go func() {
-		defer close(frontendCh)
 		defer close(workerCh)
 		for link := range linksCh {
-			select {
-			case frontendCh <- link:
-			default:
-			}
 			select {
 			case <-jobCtx.Done():
 				return
@@ -202,8 +196,15 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 				continue
 			}
 
-			if err := s.persistResult(jobCtx, res); err != nil {
-				slog.Error("persist failed", "err", err)
+			post, err := s.persistPost(jobCtx, res)
+			if err != nil {
+				slog.Error("persist post failed", "err", err)
+				continue
+			}
+
+			_, err = s.persistComment(jobCtx, res, post.ID)
+			if err != nil {
+				slog.Error("persist comment failed", "err", err)
 				continue
 			}
 
@@ -220,7 +221,7 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 		slog.Info("scrape job completed and chrome process killed", "duration_s", elapsed)
 	}()
 
-	return frontendCh, nil
+	return nil
 }
 
 // func (s *svc) StreamLinks(id int64) (<-chan ScrapeData, error) {
@@ -248,32 +249,186 @@ func (s *svc) scrapeTab(browserCtx context.Context, linkResult LinkResult) Scrap
 	var actions []chromedp.Action
 	actions = append(actions, chromedp.Navigate(linkResult.Url))
 	actions = append(actions, chromedp.WaitVisible(`body`, chromedp.ByQuery))
-	actions = append(actions, chromedp.Sleep(scraperutils.SleepRangeMs(6000, 10000)))
-	// actions = append(actions, chromedp.WaitReady(`div.mhy-reply-list`, chromedp.ByQuery))
+	actions = append(actions, chromedp.Sleep(scraperutils.SleepRangeMs(3000, 4200)))
 	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
-		// var comments []ScrapeComment
-		type cardInfo struct {
+		// Get Post
+		var postContent string
+		if err := chromedp.Evaluate(`
+			(() => {
+				const isImageContent = document.querySelector('.mhy-image-article');
+				const postContent = isImageContent
+					? (document.querySelector('.mhy-image-article__describe')?.innerText.trim() || '')
+					: Array.from(document.querySelectorAll('.mhy-image-text-article__content p'))
+						.map(p => p.innerText.trim())
+						.join('\n');
+				return postContent;
+			})()
+			`, &postContent).Do(ctx); err != nil {
+			return err
+		}
+		result.Content = postContent
+		return nil
+	}))
+	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
+		// Get Comments
+		type comment struct {
 			Author  string `json:"author"`
 			Content string `json:"content"`
 		}
-		var cardInfoList []cardInfo
-		if err := chromedp.Evaluate(`
-			Array.from(document.querySelectorAll('.reply-card'))
-				.map((card) => {
-					const author = document.querySelector('.mhy-account-title__name');
-					const content = document.querySelector('replyContentWrapper pre p');
-					return {
-						author: author ? author.innerText.trim() : '',
-						content: content ? content.innerText.trim() : ''
+		type pageInfo struct {
+			Comments []comment `json:"comments"`
+		}
+		var pageData pageInfo
+		var noMore bool
+		seen := map[string]struct{}{}
+		var allComments []comment
+
+		nullScrolls := 0
+		for {
+			// Scrape
+			if err := chromedp.Evaluate(`
+			(async () => {
+				const sleep = async (duration) => {
+					await new Promise(r => setTimeout(r, duration));
+				}
+
+				const scrollToBottom = async (el, maxAttempts = 20) => {
+					let lastHeight = el.scrollHeight;
+					for (let i = 0; i < maxAttempts; i++) {
+						el.scrollTop = el.scrollHeight;
+						await sleep(500);
+						if (el.scrollHeight === lastHeight) break; // no new content loaded
+						lastHeight = el.scrollHeight;
 					}
-				})
-			`, &cardInfoList).Do(ctx); err != nil {
-			return err
+				};
+
+				const getCommentsFromDialog = async () => {
+					comments = [];
+					const dialog = document.querySelector('.mhy-dialog__body');
+					
+					// Parent Comment
+					const parentAuthorEl = dialog.querySelector('.mhy-account-title__name');
+					const parentCommentEls = dialog.querySelector('.replyContentWrapper pre p');
+					const parentAuthor = parentAuthorEl ? parentAuthorEl.innerText.trim() : '';
+					const parentComment = Array.from(parentCommentEls)
+						.map(p => p.innerText.trim())
+						.join('\n');
+					comments.push({ author: parentAuthor, content: parentComment });
+
+					// Scroll down
+					const loadMore = dialog.querySelector('.mhy-loadmore__btn .mhy-button__button');
+					let noMore = false;
+					while (!noMore) {
+						await scrollToBottom(dialog);
+						nomore = dialog.querySelector('.mhy-loadmore__nomore') !== null;
+					}
+					
+					// All other comments
+					const cardEls = dialog.querySelectorAll('.s-reply-list__item');
+					cardEls.forEach((cardEl) => {
+						const a = cardEl.querySelector('.mhy-account-title__name);
+						const c = cardEl.querySelector('.reply-card__content-inner-wrapper');
+					});
+					
+
+					return comments;
+				}
+
+				const comments = await Promise.all(
+				Array.from(document.querySelectorAll('.reply-card'))
+					.map(async (card) => {
+						const resComments = [];
+						const authorEl = card.querySelector('.mhy-account-title__name');
+						const contentsEl = card.querySelectorAll('.replyContentWrapper pre p');
+						const author = authorEl ? authorEl.innerText.trim() : '';
+						const content = Array.from(contentsEl)
+							.map(p => p.innerText.trim())
+							.join('\n');
+
+						// Parent
+						resComments.push({
+							author: author,
+							content: content
+						});
+
+						const innerRepliesButtonEl = card.querySelector('.reply-card-inner-reply__detail');
+						const innerRepliesEls = card.querySelectorAll('.reply-card__replies');
+
+						if (innerRepliesButtonEl) {
+							innerRepliesButtonEl.click();
+							await sleep(1000);
+							const comments = await getCommentsFromDialog();
+
+						} else if (innerRepliesEls.length > 0) {
+							innerRepliesEls.forEach((reply) => {
+								const innerAuthorEl = reply.querySelector('.mhy-account-title__name');
+								const innerContentsEl = reply.querySelectorAll('.reply-card-inner-reply__content p')
+								const innerAuthor = innerAuthorEl ? innerAuthorEl.innerText.trim() : '';
+								const innerContent = Array.from(innerContentsEl)
+									.map(p => p.innerText.trim())
+									.join('\n');
+
+								resComments.push({ author: innerAuthor, content: innerContent });
+							});
+						}
+
+					return resComments;
+				});
+
+				return {
+					comments: comments.flat()
+				};
+			})()
+			`, &pageData).Do(ctx); err != nil {
+				return err
+			}
+			// slog.Debug("raw page data", "comment_count", len(pageData.Comments), "first", pageData.Comments)
+
+			// Scroll
+			chromedp.Evaluate(`document.querySelector('.mhy-loadmore__nomore') !== null`, &noMore).Do(ctx)
+			if noMore || nullScrolls >= 3 {
+				break
+			}
+			chromedp.Evaluate(`window.scrollTo(0, document.body.scrollHeight)`, nil).Do(ctx)
+			time.Sleep(scraperutils.SleepRangeMs(1500, 2500))
+
+			// Check for null scrolls
+			prevCount := len(allComments)
+			for _, c := range pageData.Comments {
+				key := c.Author + "|" + c.Content
+				if _, exists := seen[key]; !exists {
+					seen[key] = struct{}{}
+					allComments = append(allComments, c)
+				}
+			}
+			if len(allComments) == prevCount {
+				nullScrolls++
+			} else {
+				nullScrolls = 0
+			}
+
+			slog.Debug("scroll iteration",
+				"new_comments", len(allComments)-prevCount,
+				"total_so_far", len(allComments),
+				"null_scrolls", nullScrolls,
+			)
 		}
 
-		// for _, card := range cardInfoList {
-		//
-		// }
+		slog.Debug("comments scraped",
+			"url", result.Permalink,
+			"count", len(allComments),
+			"stopped_by", map[bool]string{true: "noMore", false: "nullScrolls"}[noMore],
+		)
+
+		for _, c := range allComments {
+			comment := ScrapeComment{
+				Url:     result.Permalink,
+				Author:  c.Author,
+				Content: c.Content,
+			}
+			result.Comments = append(result.Comments, comment)
+		}
+
 		return nil
 	}))
 
@@ -292,7 +447,7 @@ func (s *svc) scrapeTab(browserCtx context.Context, linkResult LinkResult) Scrap
 }
 
 func getLinks(browserCtx context.Context, linksCh chan<- LinkResult, limit int) error {
-	url := "https://www.hoyolab.com/circles/2/30/feed?page_type=30&page_sort=new"
+	url := "https://www.hoyolab.com/circles/2/30/feed?page_type=30&page_sort=hot"
 
 	if err := chromedp.Run(browserCtx,
 		chromedp.Navigate(url),
@@ -365,10 +520,10 @@ func getLinks(browserCtx context.Context, linksCh chan<- LinkResult, limit int) 
 	return nil
 }
 
-func (s *svc) persistResult(jobCtx context.Context, res ScrapeData) error {
+func (s *svc) persistPost(jobCtx context.Context, res ScrapeData) (repo.HylPost, error) {
 	tx, err := s.db.BeginTx(jobCtx, pgx.TxOptions{})
 	if err != nil {
-		return err
+		return repo.HylPost{}, err
 	}
 	defer tx.Rollback(jobCtx)
 
@@ -382,39 +537,99 @@ func (s *svc) persistResult(jobCtx context.Context, res ScrapeData) error {
 		Content:   res.Content,
 	})
 	if err != nil {
-		return fmt.Errorf("AddHylPost: %w", err)
-	}
-
-	for _, c := range res.Comments {
-		_, err := qtx.AddHylComment(jobCtx, repo.AddHylCommentParams{
-			SessionID:       res.SessionID,
-			PostID:          post.ID,
-			ParentCommentID: pgtype.Int8{Valid: false}, // TODO: impl properly
-			Url:             res.Permalink,
-			Author:          c.Author,
-			Content:         c.Content,
-		})
-		if err != nil {
-			// tx.Rollback(jobCtx)
-			slog.Error("AddHylComment failed", "err", err)
-			// continue
-		}
+		return repo.HylPost{}, fmt.Errorf("AddHylPost: %w", err)
 	}
 
 	channel := fmt.Sprintf("hyl_scrape_%d", res.SessionID)
 
-	payload, err := json.Marshal(post)
+	payload, err := json.Marshal(NotifyPayload{
+		SessionID:   res.SessionID,
+		PayloadType: TypePost,
+		Post:        &post,
+	})
 	if err != nil {
 		slog.Error("Failed to marshal json for post", "err", err, "postId", post.ID)
+		return repo.HylPost{}, err
 	}
 	_, err = tx.Exec(jobCtx,
 		"SELECT pg_notify($1, $2)", channel, string(payload),
 	)
 	if err != nil {
 		slog.Error("pg_notify failed", "err", err)
+		return repo.HylPost{}, fmt.Errorf("hylscraper post pg_notify failed: %w", err)
 	}
 
-	return tx.Commit(jobCtx)
+	err = tx.Commit(jobCtx)
+	if err != nil {
+		slog.Error("failed to commit hylscraper post", "err", err)
+		return repo.HylPost{}, fmt.Errorf("hylscraper AddHylPost commit failed: %w", err)
+	}
+
+	return post, nil
+}
+
+func (s *svc) persistComment(jobCtx context.Context, res ScrapeData, postId int64) ([]repo.HylComment, error) {
+	if len(res.Comments) <= 0 {
+		return []repo.HylComment{}, nil
+	}
+
+	tx, err := s.db.BeginTx(jobCtx, pgx.TxOptions{})
+	if err != nil {
+		return []repo.HylComment{}, err
+	}
+	defer tx.Rollback(jobCtx)
+
+	qtx := s.repo.WithTx(tx)
+
+	params := repo.AddHylCommentsParams{
+		SessionID: make([]int64, len(res.Comments)),
+		PostID:    make([]int64, len(res.Comments)),
+		// ParentCommentID: make([]int64, len(res.Comments)), // TODO: its empty
+		Url:     make([]string, len(res.Comments)),
+		Author:  make([]string, len(res.Comments)),
+		Content: make([]string, len(res.Comments)),
+	}
+
+	for i, c := range res.Comments {
+		params.SessionID[i] = res.SessionID
+		params.PostID[i] = postId
+		// params.ParentCommentID[i] = c.ParentCommentID // TODO: nothing is here
+		params.Url[i] = c.Url
+		params.Author[i] = c.Author
+		params.Content[i] = c.Content
+	}
+	comments, err := qtx.AddHylComments(jobCtx, params)
+	if err != nil {
+		slog.Error("AddHylComment failed", "err", err)
+		return []repo.HylComment{}, err
+	}
+
+	channel := fmt.Sprintf("hyl_scrape_%d", res.SessionID)
+
+	payload, err := json.Marshal(NotifyPayload{
+		SessionID:   res.SessionID,
+		PayloadType: TypeComment,
+		Comments:    comments,
+	})
+	if err != nil {
+		slog.Error("Failed to marshal json for comment", "err", err, "postId", postId)
+		return []repo.HylComment{}, err
+	}
+	_, err = tx.Exec(jobCtx,
+		"SELECT pg_notify($1, $2)", channel, string(payload),
+	)
+	if err != nil {
+		slog.Error("pg_notify failed", "err", err)
+		return []repo.HylComment{}, fmt.Errorf("hylscraper comment pg_notify failed: %w", err)
+	}
+
+	err = tx.Commit(jobCtx)
+	if err != nil {
+		slog.Error("failed to commit hylscraper comment", "err", err)
+		return []repo.HylComment{}, fmt.Errorf("hylscraper AddHylComment commit failed: %w", err)
+	}
+
+	return comments, nil
 }
 
 // func (s *svc) publish(id int64, res LinkResult) {

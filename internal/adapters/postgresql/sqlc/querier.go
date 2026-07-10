@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	AddCharToProfile(ctx context.Context, arg AddCharToProfileParams) (AddCharToProfileRow, error)
 	AddHylComment(ctx context.Context, arg AddHylCommentParams) (HylComment, error)
+	AddHylComments(ctx context.Context, arg AddHylCommentsParams) ([]HylComment, error)
 	AddHylPost(ctx context.Context, arg AddHylPostParams) (HylPost, error)
 	AddScrapeErrorById(ctx context.Context, arg AddScrapeErrorByIdParams) (HylScrapeSession, error)
 	CreateBingo(ctx context.Context, arg CreateBingoParams) (Bingo, error)

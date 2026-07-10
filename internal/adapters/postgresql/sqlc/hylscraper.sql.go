@@ -50,6 +50,61 @@ func (q *Queries) AddHylComment(ctx context.Context, arg AddHylCommentParams) (H
 	return i, err
 }
 
+const addHylComments = `-- name: AddHylComments :many
+INSERT INTO hyl_comments (session_id, post_id, url, author, content)
+SELECT
+    unnest($1::bigint[]),
+    unnest($2::bigint[]),
+    unnest($3::text[]),
+    unnest($4::text[]),
+    unnest($5::text[])
+RETURNING id, session_id, post_id, parent_comment_id, url, author, content, created_at, updated_at
+`
+
+type AddHylCommentsParams struct {
+	SessionID []int64  `json:"session_id"`
+	PostID    []int64  `json:"post_id"`
+	Url       []string `json:"url"`
+	Author    []string `json:"author"`
+	Content   []string `json:"content"`
+}
+
+func (q *Queries) AddHylComments(ctx context.Context, arg AddHylCommentsParams) ([]HylComment, error) {
+	rows, err := q.db.Query(ctx, addHylComments,
+		arg.SessionID,
+		arg.PostID,
+		arg.Url,
+		arg.Author,
+		arg.Content,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []HylComment
+	for rows.Next() {
+		var i HylComment
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.PostID,
+			&i.ParentCommentID,
+			&i.Url,
+			&i.Author,
+			&i.Content,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const addHylPost = `-- name: AddHylPost :one
 INSERT INTO hyl_posts (session_id, url, author, title, content) 
     VALUES ($1, $2, $3, $4, $5)

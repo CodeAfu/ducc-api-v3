@@ -102,11 +102,11 @@ func (h *handler) CreateImage(w http.ResponseWriter, r *http.Request) {
 	createdImage, err := h.service.CreateImage(r.Context(), req)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateImage) {
-			slog.Error("duplicate image detected", "error", err)
+			slog.Error("duplicate image detected", "err", err)
 			http.Error(w, "image already exists", http.StatusConflict)
 			return
 		}
-		slog.Error("error occurred while creating image", "error", err)
+		slog.Error("error occurred while creating image", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -127,10 +127,10 @@ func (h *handler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.service.DeleteImage(r.Context(), id); err != nil {
 		if errors.Is(err, ErrProtectedImage) {
-			slog.Error("this image is protected from deletion", "error", err)
+			slog.Error("this image is protected from deletion", "err", err)
 			http.Error(w, "you are not allowed to delete this image", http.StatusConflict)
 		}
-		slog.Error("error occurred while attempting to delete image", "error", err, "id", id)
+		slog.Error("error occurred while attempting to delete image", "err", err, "id", id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return

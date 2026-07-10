@@ -30,15 +30,6 @@ const (
 	TypeComment DataType = "comment"
 )
 
-type ScrapeComment struct {
-	ID              int64
-	PostID          int64
-	ParentCommentID int64
-	Url             string
-	Author          string
-	Content         string
-}
-
 type LinkResult struct {
 	Status       ScraperStatus `json:"status"`
 	Url          string        `json:"url,omitempty"`
@@ -48,17 +39,21 @@ type LinkResult struct {
 }
 
 type ScrapeData struct {
-	Type      DataType
 	SessionID int64
 	Permalink string
+	Title     string
 	Author    string
 	Content   string
+	Comments  []ScrapeComment
 	ScrapedAt time.Time
 	Duration  time.Duration
+}
 
-	// Post specific
-	Title    string
-	Comments []ScrapeComment
+type ScrapeComment struct {
+	ParentCommentID int64
+	Url             string
+	Author          string
+	Content         string
 }
 
 func (s ScrapeData) MarshalJSON() ([]byte, error) {
@@ -73,8 +68,8 @@ func (s ScrapeData) MarshalJSON() ([]byte, error) {
 }
 
 type NotifyPayload struct {
-	SessionID   int64           `json:"session_id"`
-	PayloadType DataType        `json:"payload_type"`
-	Post        repo.HylPost    `json:"post"`
-	Comment     repo.HylComment `json:"comment"`
+	SessionID   int64             `json:"session_id"`
+	PayloadType DataType          `json:"payload_type"`
+	Post        *repo.HylPost     `json:"post,omitempty"`
+	Comments    []repo.HylComment `json:"comments,omitempty"`
 }

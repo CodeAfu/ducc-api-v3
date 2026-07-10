@@ -25,13 +25,13 @@ func (h *handler) PreviewDocument(w http.ResponseWriter, r *http.Request) {
 
 	var req documentRequest
 	if err := httputil.Read(r, &req); err != nil {
-		slog.Error("error while reading request body", "error", err)
+		slog.Error("error while reading request body", "err", err)
 		http.Error(w, "error while reading request body", http.StatusBadRequest)
 		return
 	}
 	base64Doc, err := h.service.PreviewDocument(ctx, &req)
 	if err != nil {
-		slog.Error("internal server error", "error", err)
+		slog.Error("internal server error", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -47,18 +47,18 @@ func (h *handler) DownloadDocument(w http.ResponseWriter, r *http.Request) {
 
 	var req documentRequest
 	if err := httputil.Read(r, &req); err != nil {
-		slog.Error("error while reading request body", "error", err)
+		slog.Error("error while reading request body", "err", err)
 		http.Error(w, "error while reading request body", http.StatusBadRequest)
 		return
 	}
 	data, err := h.service.CreateDocument(ctx, &req)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			slog.Error("request timed out", "error", err)
+			slog.Error("request timed out", "err", err)
 			http.Error(w, "request timed out", http.StatusGatewayTimeout)
 			return
 		}
-		slog.Error("internal error occurred", "error", err)
+		slog.Error("internal error occurred", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
