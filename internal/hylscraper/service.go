@@ -183,7 +183,7 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 	}()
 
 	// 3. Tab Workers
-	numTabs := int(math.Min(float64(runtime.NumCPU()), 5))
+	numTabs := int(math.Min(float64(runtime.NumCPU()/2+1), 5))
 	resCh := scraperutils.FanOut(jobCtx, workerCh, numTabs, func(link LinkResult) ScrapeData {
 		res := s.scrapeTab(browserCtx, link)
 		res.SessionID = sessionId
@@ -208,7 +208,7 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 			}
 
 			slog.Debug("hyl scrape data",
-				"id", idx,
+				"idx", idx,
 				"url", res.Permalink,
 				"author", res.Author,
 				"title", res.Title,
@@ -248,8 +248,34 @@ func (s *svc) scrapeTab(browserCtx context.Context, linkResult LinkResult) Scrap
 	var actions []chromedp.Action
 	actions = append(actions, chromedp.Navigate(linkResult.Url))
 	actions = append(actions, chromedp.WaitVisible(`body`, chromedp.ByQuery))
-	actions = append(actions, chromedp.Sleep(scraperutils.SleepRangeMs(3000, 7000)))
-	actions = append(actions, chromedp.Sleep(scraperutils.SleepRangeMs(3000, 7000)))
+	actions = append(actions, chromedp.Sleep(scraperutils.SleepRangeMs(6000, 10000)))
+	// actions = append(actions, chromedp.WaitReady(`div.mhy-reply-list`, chromedp.ByQuery))
+	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
+		// var comments []ScrapeComment
+		type cardInfo struct {
+			Author  string `json:"author"`
+			Content string `json:"content"`
+		}
+		var cardInfoList []cardInfo
+		if err := chromedp.Evaluate(`
+			Array.from(document.querySelectorAll('.reply-card'))
+				.map((card) => {
+					const author = document.querySelector('.mhy-account-title__name');
+					const content = document.querySelector('replyContentWrapper pre p');
+					return {
+						author: author ? author.innerText.trim() : '',
+						content: content ? content.innerText.trim() : ''
+					}
+				})
+			`, &cardInfoList).Do(ctx); err != nil {
+			return err
+		}
+
+		// for _, card := range cardInfoList {
+		//
+		// }
+		return nil
+	}))
 
 	if result.Title == "" {
 		actions = append(actions, chromedp.Title(&result.Title))

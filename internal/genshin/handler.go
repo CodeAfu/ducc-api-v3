@@ -45,7 +45,6 @@ func (h *handler) GetAllChars(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.Set(cacheKey, chars, DEFAULT_CACHE_DURATION)
-	slog.Info("cache set", "key", cacheKey)
 	httputil.Write(w, http.StatusOK, chars)
 }
 
@@ -214,13 +213,12 @@ func (h *handler) GetAllCharsFromProfile(w http.ResponseWriter, r *http.Request)
 	ctx, cancel := context.WithTimeout(r.Context(), time.Second*60)
 	defer cancel()
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	email, err := getKeyFromBearerToken(token, "email")
+	_, err := getKeyFromBearerToken(token, "email")
 	if err != nil {
 		slog.Error("error while decoding token", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	slog.Info("from token", "email", email)
 	id, ok := httputil.ParseID(w, r, "id")
 	if !ok {
 		return

@@ -23,9 +23,20 @@ const (
 	StatusError         ScraperStatus = "error"
 )
 
+type DataType string
+
+const (
+	TypePost    DataType = "post"
+	TypeComment DataType = "comment"
+)
+
 type ScrapeComment struct {
-	Author  string `json:"author"`
-	Content string `json:"content"`
+	ID              int64
+	PostID          int64
+	ParentCommentID int64
+	Url             string
+	Author          string
+	Content         string
 }
 
 type LinkResult struct {
@@ -37,14 +48,17 @@ type LinkResult struct {
 }
 
 type ScrapeData struct {
-	SessionID int64           `json:"session_id"`
-	Permalink string          `json:"permalink"`
-	Title     string          `json:"title"`
-	Author    string          `json:"author"`
-	Content   string          `json:"content"`
-	Comments  []ScrapeComment `json:"-"`
-	ScrapedAt time.Time       `json:"scraped_at"`
-	Duration  time.Duration   `json:"-"`
+	Type      DataType
+	SessionID int64
+	Permalink string
+	Author    string
+	Content   string
+	ScrapedAt time.Time
+	Duration  time.Duration
+
+	// Post specific
+	Title    string
+	Comments []ScrapeComment
 }
 
 func (s ScrapeData) MarshalJSON() ([]byte, error) {
@@ -59,7 +73,8 @@ func (s ScrapeData) MarshalJSON() ([]byte, error) {
 }
 
 type NotifyPayload struct {
-	SessionID int64           `json:"session_id"`
-	Post      repo.HylPost    `json:"post"`
-	Comment   repo.HylComment `json:"comment"`
+	SessionID   int64           `json:"session_id"`
+	PayloadType DataType        `json:"payload_type"`
+	Post        repo.HylPost    `json:"post"`
+	Comment     repo.HylComment `json:"comment"`
 }
