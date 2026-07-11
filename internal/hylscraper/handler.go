@@ -55,8 +55,9 @@ func (h *handler) Init(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("1 <= limit <= %d", SCRAPER_UPPER_LIMIT), http.StatusBadRequest)
 		return
 	}
+	sortBy := chi.URLParam(r, "sort-by")
 
-	session, err := h.service.Init(r.Context(), email, limit)
+	session, err := h.service.Init(r.Context(), email, limit, sortBy)
 	if err != nil {
 		slog.Error("error occurred while creating hoyolab scrape session", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -165,7 +166,6 @@ func (h *handler) StreamUpdates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionIdStr := chi.URLParam(r, "id")
-
 	if sessionIdStr == "" {
 		http.Error(w, "ID param is missing", http.StatusBadRequest)
 		return

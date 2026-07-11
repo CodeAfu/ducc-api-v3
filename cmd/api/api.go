@@ -71,12 +71,13 @@ func (app *application) mount() http.Handler {
 	bingoService := bingo.NewService(repo.New(app.db), app.db)
 	bingoHandler := bingo.NewHandler(bingoService)
 	r.Group(func(r chi.Router) {
+		r.Use(app.useClerkAuthorization)
 		r.Use(middleware.Timeout(60 * time.Second))
 		r.Get("/api/v3/bingo", bingoHandler.GetBingo)
 		r.Get("/api/v3/bingo/{id}", bingoHandler.GetBingoById)
 	})
 	r.Group(func(r chi.Router) {
-		r.Use(clerkhttp.RequireHeaderAuthorization())
+		r.Use(app.useClerkAuthorization)
 		r.Use(middleware.Timeout(60 * time.Second))
 		r.Post("/api/v3/bingo", bingoHandler.CreateBingo)
 	})
@@ -85,12 +86,13 @@ func (app *application) mount() http.Handler {
 	imageService := image.NewService(repo.New(app.db), app.db)
 	imageHandler := image.NewHandler(imageService)
 	r.Group(func(r chi.Router) {
+		r.Use(app.useClerkAuthorization)
 		r.Use(middleware.Timeout(60 * time.Second))
 		r.Get("/api/v3/images", imageHandler.GetImages)
 		r.Get("/api/v3/images/{id}", imageHandler.GetImageById)
 	})
 	r.Group(func(r chi.Router) {
-		r.Use(clerkhttp.RequireHeaderAuthorization())
+		r.Use(app.useClerkAuthorization)
 		r.Post("/api/v3/images", imageHandler.CreateImage)
 		r.Delete("/api/v3/images/{id}", imageHandler.DeleteImage)
 	})
@@ -100,6 +102,7 @@ func (app *application) mount() http.Handler {
 	hylscraperHandler := hylscraper.NewHandler(hylscraperService, isDev)
 	r.Group(func(r chi.Router) {
 		// r.Use(app.onlyAllowedOrigins)
+		r.Use(app.useClerkAuthorization)
 		r.Post("/api/v3/hylscraper/scrape", hylscraperHandler.Init)
 		// r.Get("/api/v3/hylscraper/scrape", hylscraperHandler.Scrape)
 		r.Get("/api/v3/hylscraper/{id}/subscribe", hylscraperHandler.StreamUpdates)
@@ -114,6 +117,7 @@ func (app *application) mount() http.Handler {
 	genshinService := genshin.NewService(repo.New(app.db), app.db)
 	genshinHandler := genshin.NewHandler(genshinService)
 	r.Group(func(r chi.Router) {
+		r.Use(app.useClerkAuthorization)
 		r.Use(middleware.Timeout(60 * time.Second))
 		r.Get("/api/v3/genshin/characters", genshinHandler.GetAllChars)
 		r.Get("/api/v3/genshin/characters/{id}", genshinHandler.GetGenshinChar)
@@ -122,7 +126,7 @@ func (app *application) mount() http.Handler {
 		r.Get("/api/v3/genshin/elements/id", genshinHandler.GetElementId)
 	})
 	r.Group(func(r chi.Router) {
-		r.Use(clerkhttp.RequireHeaderAuthorization())
+		r.Use(app.useClerkAuthorization)
 		r.Get("/api/v3/genshin/profiles", genshinHandler.GetProfiles)
 		r.Get("/api/v3/genshin/profiles/{id}", genshinHandler.GetProfile)
 		r.Post("/api/v3/genshin/profiles", genshinHandler.CreateGenshinProfile)
@@ -144,7 +148,7 @@ func (app *application) mount() http.Handler {
 	agreeService := agreegen.NewService(repo.New(app.db), app.db, app.s3Client, app.config.env == "development")
 	agreeHandler := agreegen.NewHandler(agreeService)
 	r.Group(func(r chi.Router) {
-		// r.Use(clerkhttp.RequireHeaderAuthorization())
+		r.Use(app.useClerkAuthorization)
 		// r.Use(app.onlyAllowedOrigins)
 		r.Post("/api/v3/agreement-generator/preview", agreeHandler.PreviewDocument)
 		r.Post("/api/v3/agreement-generator/download", agreeHandler.DownloadDocument)
@@ -169,6 +173,13 @@ func (app *application) onlyAllowedOrigins(next http.Handler) http.Handler {
 		}
 		http.Error(w, "forbidden", http.StatusForbidden)
 	})
+}
+
+func (app *application) useClerkAuthorization(next http.Handler) http.Handler {
+	if app.config.env == "devleopment" {
+		return next
+	}
+	return clerkhttp.RequireHeaderAuthorization()(next)
 }
 
 func (app *application) run(h http.Handler) error {

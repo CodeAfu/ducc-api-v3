@@ -12,6 +12,7 @@ import (
 
 	repo "github.com/CodeAfu/go-ducc-api/internal/adapters/postgresql/sqlc"
 	"github.com/CodeAfu/go-ducc-api/internal/adapters/scraper/scraperutils"
+	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,7 +20,7 @@ import (
 )
 
 type Service interface {
-	Init(ctx context.Context, email string, limit int) (repo.HylScrapeSession, error)
+	Init(ctx context.Context, email string, limit int, sortBy string) (repo.HylScrapeSession, error)
 	// Stream(ctx context.Context, id int64) (idk) // TODO: MAKE ASAP
 	// Scrape(sessionId int64, limit int) (<-chan LinkResult, error)
 	// StreamLinks(id int64) (<-chan ScrapeData, error)
@@ -53,7 +54,7 @@ func NewService(repo *repo.Queries, db *pgxpool.Pool, headless bool) Service {
 	}
 }
 
-func (s *svc) Init(ctx context.Context, email string, limit int) (repo.HylScrapeSession, error) {
+func (s *svc) Init(ctx context.Context, email string, limit int, sortBy string) (repo.HylScrapeSession, error) {
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return repo.HylScrapeSession{}, err
@@ -83,7 +84,7 @@ func (s *svc) Init(ctx context.Context, email string, limit int) (repo.HylScrape
 	go func() {
 		defer s.removeContext(session.ID)
 
-		err := s.scrape(jobCtx, jobCancel, session.ID, limit)
+		err := s.scrape(jobCtx, jobCancel, session.ID, limit, sortBy)
 		if err != nil {
 			slog.Error("error while scraping", "err", err)
 			jobCancel()
@@ -114,7 +115,7 @@ func (s *svc) Subscribe(ctx context.Context, sessionID int64, send func([]byte))
 	}
 }
 
-func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessionId int64, limit int) error {
+func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessionId int64, limit int, sortBy string) error {
 	start := time.Now()
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", s.headless),
@@ -159,7 +160,7 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 	go func() {
 		defer close(linksCh)
 		linksCh <- LinkResult{Status: StatusInitializing}
-		if err := getLinks(browserCtx, linksCh, limit); err != nil {
+		if err := getLinks(browserCtx, linksCh, limit, sortBy); err != nil {
 			slog.Error("getLinks failed", "err", err)
 		}
 	}()
@@ -242,7 +243,7 @@ func (s *svc) scrapeTab(browserCtx context.Context, linkResult LinkResult) Scrap
 	}
 
 	tabCtx, cancelTab := chromedp.NewContext(browserCtx)
-	tabCtx, timeoutCancel := context.WithTimeout(tabCtx, time.Second*30)
+	tabCtx, timeoutCancel := context.WithTimeout(tabCtx, time.Second*180)
 	defer cancelTab()
 	defer timeoutCancel()
 
@@ -294,21 +295,26 @@ func (s *svc) scrapeTab(browserCtx context.Context, linkResult LinkResult) Scrap
 
 				const scrollToBottom = async (el, maxAttempts = 20) => {
 					let lastHeight = el.scrollHeight;
-					for (let i = 0; i < maxAttempts; i++) {
+					let attemptsLeft = maxAttempts;
+					while (attemptsLeft > 0) {
 						el.scrollTop = el.scrollHeight;
 						await sleep(500);
-						if (el.scrollHeight === lastHeight) break; // no new content loaded
-						lastHeight = el.scrollHeight;
+						if (el.scrollHeight === lastHeight) {
+							attemptsLeft--;
+						} else {
+							attemptsLeft = maxAttempts;
+							lastHeight = el.scrollHeight;
+						}
 					}
 				};
 
 				const getCommentsFromDialog = async () => {
-					comments = [];
+					const comments = [];
 					const dialog = document.querySelector('.mhy-dialog__body');
-					
-					// Parent Comment
+
+					// Get parent comment
 					const parentAuthorEl = dialog.querySelector('.mhy-account-title__name');
-					const parentCommentEls = dialog.querySelector('.replyContentWrapper pre p');
+					const parentCommentEls = dialog.querySelectorAll('.replyContentWrapper pre p');
 					const parentAuthor = parentAuthorEl ? parentAuthorEl.innerText.trim() : '';
 					const parentComment = Array.from(parentCommentEls)
 						.map(p => p.innerText.trim())
@@ -316,83 +322,79 @@ func (s *svc) scrapeTab(browserCtx context.Context, linkResult LinkResult) Scrap
 					comments.push({ author: parentAuthor, content: parentComment });
 
 					// Scroll down
-					const loadMore = dialog.querySelector('.mhy-loadmore__btn .mhy-button__button');
 					let noMore = false;
 					while (!noMore) {
+						const btn = dialog.querySelector('.mhy-loadmore__btn .mhy-button__button');
+						if (btn) btn.click();
 						await scrollToBottom(dialog);
-						nomore = dialog.querySelector('.mhy-loadmore__nomore') !== null;
+						noMore = dialog.querySelector('.mhy-loadmore__nomore') !== null;
 					}
-					
-					// All other comments
+
+					// Get all other comments
 					const cardEls = dialog.querySelectorAll('.s-reply-list__item');
 					cardEls.forEach((cardEl) => {
-						const a = cardEl.querySelector('.mhy-account-title__name);
-						const c = cardEl.querySelector('.reply-card__content-inner-wrapper');
+						const aEl = cardEl.querySelector('.mhy-account-title__name');
+						const cEl = cardEl.querySelectorAll('.reply-card__content-inner-wrapper pre p');
+						const a = aEl.innerText.trim();
+						const c = Array.from(cEl)
+							.map(p => p.innerText.trim())
+							.join('\n');
+						comments.push({ author: a, content: c });
 					});
-					
 
+					// Close dialog
+					const closeBtn = dialog.querySelector('.icon-dialog_close');
+					if (closeBtn) closeBtn.click();
+					await sleep(500);
+				
 					return comments;
 				}
 
-				const comments = await Promise.all(
-				Array.from(document.querySelectorAll('.reply-card'))
-					.map(async (card) => {
-						const resComments = [];
-						const authorEl = card.querySelector('.mhy-account-title__name');
-						const contentsEl = card.querySelectorAll('.replyContentWrapper pre p');
-						const author = authorEl ? authorEl.innerText.trim() : '';
-						const content = Array.from(contentsEl)
-							.map(p => p.innerText.trim())
-							.join('\n');
+				const comments = [];
+				for (const card of Array.from(document.querySelectorAll('.reply-card'))) {
+					const resComments = [];
+					const authorEl = card.querySelector('.mhy-account-title__name');
+					const contentsEl = card.querySelectorAll('.replyContentWrapper pre p');
+					const author = authorEl ? authorEl.innerText.trim() : '';
 
-						// Parent
-						resComments.push({
-							author: author,
-							content: content
+					const content = Array.from(contentsEl)
+						.map(p => p.innerText.trim())
+						.join('\n');
+					resComments.push({ author: author, content: content });
+
+					const innerRepliesButtonEl = card.querySelector('.reply-card-inner-reply__detail');
+					const innerRepliesEls = card.querySelectorAll('.reply-card__replies');
+					if (innerRepliesButtonEl) {
+						innerRepliesButtonEl.click();
+						await sleep(1000);
+						resComments.push(...(await getCommentsFromDialog()));
+					} else if (innerRepliesEls.length > 0) {
+						innerRepliesEls.forEach((reply) => {
+							const innerAuthorEl = reply.querySelector('.mhy-account-title__name');
+							const innerContentsEl = reply.querySelectorAll('.reply-card-inner-reply__content p');
+							const innerAuthor = innerAuthorEl ? innerAuthorEl.innerText.trim() : '';
+							const innerContent = Array.from(innerContentsEl)
+								.map(p => p.innerText.trim())
+								.join('\n');
+							resComments.push({ author: innerAuthor, content: innerContent });
 						});
-
-						const innerRepliesButtonEl = card.querySelector('.reply-card-inner-reply__detail');
-						const innerRepliesEls = card.querySelectorAll('.reply-card__replies');
-
-						if (innerRepliesButtonEl) {
-							innerRepliesButtonEl.click();
-							await sleep(1000);
-							const comments = await getCommentsFromDialog();
-
-						} else if (innerRepliesEls.length > 0) {
-							innerRepliesEls.forEach((reply) => {
-								const innerAuthorEl = reply.querySelector('.mhy-account-title__name');
-								const innerContentsEl = reply.querySelectorAll('.reply-card-inner-reply__content p')
-								const innerAuthor = innerAuthorEl ? innerAuthorEl.innerText.trim() : '';
-								const innerContent = Array.from(innerContentsEl)
-									.map(p => p.innerText.trim())
-									.join('\n');
-
-								resComments.push({ author: innerAuthor, content: innerContent });
-							});
-						}
-
-					return resComments;
-				});
+					}
+					comments.push(resComments);
+				}
 
 				return {
 					comments: comments.flat()
 				};
 			})()
-			`, &pageData).Do(ctx); err != nil {
+			`, &pageData, func(p *cdpruntime.EvaluateParams) *cdpruntime.EvaluateParams {
+				return p.WithAwaitPromise(true)
+			}).Do(ctx); err != nil {
 				return err
 			}
 			// slog.Debug("raw page data", "comment_count", len(pageData.Comments), "first", pageData.Comments)
 
-			// Scroll
-			chromedp.Evaluate(`document.querySelector('.mhy-loadmore__nomore') !== null`, &noMore).Do(ctx)
-			if noMore || nullScrolls >= 3 {
-				break
-			}
-			chromedp.Evaluate(`window.scrollTo(0, document.body.scrollHeight)`, nil).Do(ctx)
-			time.Sleep(scraperutils.SleepRangeMs(1500, 2500))
-
-			// Check for null scrolls
+			// Deduplicate into allComments BEFORE checking noMore,
+			// so the last (or only) page's comments are never skipped.
 			prevCount := len(allComments)
 			for _, c := range pageData.Comments {
 				key := c.Author + "|" + c.Content
@@ -401,6 +403,17 @@ func (s *svc) scrapeTab(browserCtx context.Context, linkResult LinkResult) Scrap
 					allComments = append(allComments, c)
 				}
 			}
+
+			// Check noMore / null-scroll exit conditions
+			chromedp.Evaluate(`document.querySelector('.mhy-loadmore__nomore') !== null`, &noMore).Do(ctx)
+			if noMore || nullScrolls >= 3 {
+				break
+			}
+
+			// Scroll and update null-scroll counter
+			chromedp.Evaluate(`window.scrollTo(0, document.body.scrollHeight)`, nil).Do(ctx)
+			time.Sleep(scraperutils.SleepRangeMs(1500, 2500))
+
 			if len(allComments) == prevCount {
 				nullScrolls++
 			} else {
@@ -446,8 +459,11 @@ func (s *svc) scrapeTab(browserCtx context.Context, linkResult LinkResult) Scrap
 	return result
 }
 
-func getLinks(browserCtx context.Context, linksCh chan<- LinkResult, limit int) error {
-	url := "https://www.hoyolab.com/circles/2/30/feed?page_type=30&page_sort=hot"
+func getLinks(browserCtx context.Context, linksCh chan<- LinkResult, limit int, sortBy string) error {
+	if sortBy == "" {
+		sortBy = "hot"
+	}
+	url := fmt.Sprintf("https://www.hoyolab.com/circles/2/30/feed?page_type=30&page_sort=%w", sortBy)
 
 	if err := chromedp.Run(browserCtx,
 		chromedp.Navigate(url),
