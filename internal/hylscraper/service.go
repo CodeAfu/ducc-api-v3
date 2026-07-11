@@ -3,6 +3,7 @@ package hylscraper
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -20,12 +21,16 @@ import (
 )
 
 type Service interface {
-	Init(ctx context.Context, email string, limit int, sortBy string) (repo.HylScrapeSession, error)
-	// Stream(ctx context.Context, id int64) (idk) // TODO: MAKE ASAP
-	// Scrape(sessionId int64, limit int) (<-chan LinkResult, error)
-	// StreamLinks(id int64) (<-chan ScrapeData, error)
-	Subscribe(ctx context.Context, sessionID int64, send func([]byte)) error
+	Create(ctx context.Context, email string) (repo.HylScrapeSession, error)
+	Start(ctx context.Context, email string, sessionID int64, limit int, sortBy string) (repo.HylScrapeSession, error)
+	Subscribe(ctx context.Context, email string, sessionID int64, ready func(), send func([]byte)) error
 }
+
+var (
+	ErrSessionNotFound  = errors.New("scrape session not found")
+	ErrSessionForbidden = errors.New("not allowed to access this scrape session")
+	ErrSessionStarted   = errors.New("scrape session has already started")
+)
 
 // type session struct {
 // 	data       repo.HylScrapeSession
@@ -38,23 +43,27 @@ type Service interface {
 type svc struct {
 	repo        *repo.Queries
 	db          *pgxpool.Pool
+	// directDSN is a non-pooled (non-PgBouncer) connection string used
+	// exclusively for LISTEN/NOTIFY, which requires a persistent session.
+	directDSN   string
 	headless    bool
 	subscribers map[int64][]chan LinkResult
 	mu          sync.RWMutex
 	contexts    []scraperContext
 }
 
-func NewService(repo *repo.Queries, db *pgxpool.Pool, headless bool) Service {
+func NewService(repo *repo.Queries, db *pgxpool.Pool, headless bool, directDSN string) Service {
 	return &svc{
 		repo:        repo,
 		db:          db,
+		directDSN:   directDSN,
 		headless:    headless,
 		subscribers: make(map[int64][]chan LinkResult),
 		mu:          sync.RWMutex{},
 	}
 }
 
-func (s *svc) Init(ctx context.Context, email string, limit int, sortBy string) (repo.HylScrapeSession, error) {
+func (s *svc) Create(ctx context.Context, email string) (repo.HylScrapeSession, error) {
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return repo.HylScrapeSession{}, err
@@ -71,43 +80,73 @@ func (s *svc) Init(ctx context.Context, email string, limit int, sortBy string) 
 		return repo.HylScrapeSession{}, err
 	}
 
+	return session, nil
+}
+
+func (s *svc) Start(ctx context.Context, email string, sessionID int64, limit int, sortBy string) (repo.HylScrapeSession, error) {
+	session, err := s.sessionForOwner(ctx, email, sessionID)
+	if err != nil {
+		return repo.HylScrapeSession{}, err
+	}
+
+	claimedSession, err := s.repo.ClaimHylScrapeSession(ctx, repo.ClaimHylScrapeSessionParams{
+		ID:             session.ID,
+		CreatedByEmail: email,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return repo.HylScrapeSession{}, ErrSessionStarted
+	}
+	if err != nil {
+		return repo.HylScrapeSession{}, err
+	}
+
 	// Use context.Background() because s.scrape() is a fire and forget task
 	jobCtx, jobCancel := context.WithTimeout(context.Background(), 60*time.Minute)
 	s.mu.Lock()
 	s.contexts = append(s.contexts, scraperContext{
-		id:      session.ID,
+		id:      sessionID,
 		context: jobCtx,
 		cancel:  jobCancel,
 	})
 	s.mu.Unlock()
 
 	go func() {
-		defer s.removeContext(session.ID)
+		defer s.removeContext(sessionID)
 
-		err := s.scrape(jobCtx, jobCancel, session.ID, limit, sortBy)
+		err := s.scrape(jobCtx, jobCancel, sessionID, limit, sortBy)
 		if err != nil {
 			slog.Error("error while scraping", "err", err)
 			jobCancel()
 		}
 	}()
 
-	return session, nil
+	return claimedSession, nil
 }
 
-func (s *svc) Subscribe(ctx context.Context, sessionID int64, send func([]byte)) error {
-	conn, err := s.db.Acquire(ctx)
-	if err != nil {
+func (s *svc) Subscribe(ctx context.Context, email string, sessionID int64, ready func(), send func([]byte)) error {
+	if _, err := s.sessionForOwner(ctx, email, sessionID); err != nil {
 		return err
 	}
-	defer conn.Release()
+
+	// Open a direct (non-pooled) connection specifically for LISTEN/NOTIFY.
+	// Neon's PgBouncer pooler endpoint does not support LISTEN/NOTIFY because
+	// it reassigns backend connections per-transaction, so async notification
+	// messages never reach the waiting caller.  A direct pgx.Conn bypasses
+	// the pooler and maintains a persistent session with PostgreSQL.
+	conn, err := pgx.Connect(ctx, s.directDSN)
+	if err != nil {
+		return fmt.Errorf("subscribe: open direct connection: %w", err)
+	}
+	defer conn.Close(ctx)
 
 	channel := fmt.Sprintf("hyl_scrape_%d", sessionID)
 	if _, err := conn.Exec(ctx, "LISTEN "+channel); err != nil {
-		return err
+		return fmt.Errorf("subscribe: LISTEN %s: %w", channel, err)
 	}
+	ready()
 
 	for {
-		notif, err := conn.Conn().WaitForNotification(ctx)
+		notif, err := conn.WaitForNotification(ctx)
 		if err != nil {
 			return err
 		}
@@ -115,46 +154,45 @@ func (s *svc) Subscribe(ctx context.Context, sessionID int64, send func([]byte))
 	}
 }
 
+func (s *svc) sessionForOwner(ctx context.Context, email string, sessionID int64) (repo.HylScrapeSession, error) {
+	session, err := s.repo.GetHylScrapeSessionById(ctx, sessionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return repo.HylScrapeSession{}, ErrSessionNotFound
+	}
+	if err != nil {
+		return repo.HylScrapeSession{}, err
+	}
+	if session.CreatedByEmail != email {
+		return repo.HylScrapeSession{}, ErrSessionForbidden
+	}
+	return session, nil
+}
+
 func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessionId int64, limit int, sortBy string) error {
 	start := time.Now()
+	defer jobCancel()
+	defer func() {
+		finishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := s.repo.UpdateHylScraperSession(finishCtx, repo.UpdateHylScraperSessionParams{
+			ID:        sessionId,
+			ScrapeEnd: pgtype.Timestamptz{Valid: true, Time: time.Now()},
+		}); err != nil {
+			slog.Error("failed to mark scrape session complete", "session_id", sessionId, "err", err)
+		}
+	}()
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", s.headless),
 		chromedp.NoSandbox,
 	)
 
-	tx, err := s.db.BeginTx(jobCtx, pgx.TxOptions{})
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(jobCtx)
-	qtx := s.repo.WithTx(tx)
-
 	linksCh := make(chan LinkResult)
 	workerCh := make(chan LinkResult, limit)
 
-	abort := func() {
-		close(linksCh)
-		close(workerCh)
-	}
-
-	session, err := qtx.UpdateHylScraperSession(jobCtx, repo.UpdateHylScraperSessionParams{
-		ID:          sessionId,
-		ScrapeBegin: pgtype.Timestamptz{Valid: true, Time: start},
-	})
-	if err != nil {
-		abort()
-		return err
-	}
-
-	if err := tx.Commit(jobCtx); err != nil {
-		abort()
-		return err
-	}
-
-	slog.Info("session", "data", session)
-
 	allocCtx, allocCancel := chromedp.NewExecAllocator(jobCtx, opts...)
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+	defer browserCancel()
+	defer allocCancel()
 
 	// 1. Link Fetcher (Opens 1 Tab)
 	go func() {
@@ -186,41 +224,35 @@ func (s *svc) scrape(jobCtx context.Context, jobCancel context.CancelFunc, sessi
 	})
 
 	// 4. Persistence & Cleanup
-	go func() {
-		defer jobCancel()
-		defer browserCancel()
-		defer allocCancel()
-
-		idx := 0
-		for res := range resCh {
-			if res.Permalink == "" {
-				continue
-			}
-
-			post, err := s.persistPost(jobCtx, res)
-			if err != nil {
-				slog.Error("persist post failed", "err", err)
-				continue
-			}
-
-			_, err = s.persistComment(jobCtx, res, post.ID)
-			if err != nil {
-				slog.Error("persist comment failed", "err", err)
-				continue
-			}
-
-			slog.Debug("hyl scrape data",
-				"idx", idx,
-				"url", res.Permalink,
-				"author", res.Author,
-				"title", res.Title,
-				"duration", res.Duration.String(),
-			)
-			idx++
+	idx := 0
+	for res := range resCh {
+		if res.Permalink == "" {
+			continue
 		}
-		elapsed := float64(time.Since(start).Milliseconds()) / 1000.0
-		slog.Info("scrape job completed and chrome process killed", "duration_s", elapsed)
-	}()
+
+		post, err := s.persistPost(jobCtx, res)
+		if err != nil {
+			slog.Error("persist post failed", "err", err)
+			continue
+		}
+
+		_, err = s.persistComment(jobCtx, res, post.ID)
+		if err != nil {
+			slog.Error("persist comment failed", "err", err)
+			continue
+		}
+
+		slog.Debug("hyl scrape data",
+			"idx", idx,
+			"url", res.Permalink,
+			"author", res.Author,
+			"title", res.Title,
+			"duration", res.Duration.String(),
+		)
+		idx++
+	}
+	elapsed := float64(time.Since(start).Milliseconds()) / 1000.0
+	slog.Info("scrape job completed and chrome process killed", "duration_s", elapsed)
 
 	return nil
 }
@@ -310,7 +342,19 @@ func (s *svc) scrapeTab(browserCtx context.Context, linkResult LinkResult) Scrap
 
 				const getCommentsFromDialog = async () => {
 					const comments = [];
-					const dialog = document.querySelector('.mhy-dialog__body');
+
+					// Poll for the dialog to appear (up to 2 s in 200 ms steps)
+					// so we don't race against the click() that opens it.
+					let dialog = null;
+					for (let i = 0; i < 10; i++) {
+						dialog = document.querySelector('.mhy-dialog__body');
+						if (dialog) break;
+						await sleep(200);
+					}
+
+					// If the dialog never appeared, return empty rather
+					// than crashing with "Cannot read properties of null".
+					if (!dialog) return comments;
 
 					// Get parent comment
 					const parentAuthorEl = dialog.querySelector('.mhy-account-title__name');
@@ -346,7 +390,7 @@ func (s *svc) scrapeTab(browserCtx context.Context, linkResult LinkResult) Scrap
 					const closeBtn = dialog.querySelector('.icon-dialog_close');
 					if (closeBtn) closeBtn.click();
 					await sleep(500);
-				
+
 					return comments;
 				}
 
@@ -463,7 +507,7 @@ func getLinks(browserCtx context.Context, linksCh chan<- LinkResult, limit int, 
 	if sortBy == "" {
 		sortBy = "hot"
 	}
-	url := fmt.Sprintf("https://www.hoyolab.com/circles/2/30/feed?page_type=30&page_sort=%w", sortBy)
+	url := fmt.Sprintf("https://www.hoyolab.com/circles/2/30/feed?page_type=30&page_sort=%s", sortBy)
 
 	if err := chromedp.Run(browserCtx,
 		chromedp.Navigate(url),
@@ -622,21 +666,25 @@ func (s *svc) persistComment(jobCtx context.Context, res ScrapeData, postId int6
 
 	channel := fmt.Sprintf("hyl_scrape_%d", res.SessionID)
 
-	payload, err := json.Marshal(NotifyPayload{
-		SessionID:   res.SessionID,
-		PayloadType: TypeComment,
-		Comments:    comments,
-	})
-	if err != nil {
-		slog.Error("Failed to marshal json for comment", "err", err, "postId", postId)
-		return []repo.HylComment{}, err
-	}
-	_, err = tx.Exec(jobCtx,
-		"SELECT pg_notify($1, $2)", channel, string(payload),
-	)
-	if err != nil {
-		slog.Error("pg_notify failed", "err", err)
-		return []repo.HylComment{}, fmt.Errorf("hylscraper comment pg_notify failed: %w", err)
+	for _, c := range comments {
+		payload, err := json.Marshal(NotifyPayload{
+			SessionID:   res.SessionID,
+			PayloadType: TypeComment,
+			Comment:     &c,
+		})
+
+		if err != nil {
+			slog.Error("Failed to marshal json for comment", "err", err, "postId", postId)
+			return []repo.HylComment{}, err
+		}
+
+		_, err = tx.Exec(jobCtx,
+			"SELECT pg_notify($1, $2)", channel, string(payload),
+		)
+		if err != nil {
+			slog.Error("pg_notify failed", "err", err)
+			return []repo.HylComment{}, fmt.Errorf("hylscraper comment pg_notify failed: %w", err)
+		}
 	}
 
 	err = tx.Commit(jobCtx)

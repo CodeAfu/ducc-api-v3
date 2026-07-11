@@ -2,6 +2,7 @@ package hylscraper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -26,7 +27,7 @@ func NewHandler(s Service, isDev bool) *handler {
 	}
 }
 
-func (h *handler) Init(w http.ResponseWriter, r *http.Request) {
+func (h *handler) Create(w http.ResponseWriter, r *http.Request) {
 	email, ok := httputil.GetEmailFromAuthHeader(r)
 	if !ok {
 		slog.Error("user not authorized", "path", r.URL.Path)
@@ -38,6 +39,30 @@ func (h *handler) Init(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no email found on auth header", http.StatusBadRequest)
 		return
 	}
+	session, err := h.service.Create(r.Context(), email)
+	if err != nil {
+		slog.Error("error occurred while creating hoyolab scrape session", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	slog.Debug("session info", "data", session)
+
+	httputil.Write(w, http.StatusCreated, session)
+}
+
+func (h *handler) Start(w http.ResponseWriter, r *http.Request) {
+	email, ok := httputil.GetEmailFromAuthHeader(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	sessionID, ok := httputil.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
 	limitStr := r.URL.Query().Get("limit")
 	if limitStr == "" {
 		slog.Error("limit param is null")
@@ -55,96 +80,24 @@ func (h *handler) Init(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("1 <= limit <= %d", SCRAPER_UPPER_LIMIT), http.StatusBadRequest)
 		return
 	}
-	sortBy := chi.URLParam(r, "sort-by")
-
-	session, err := h.service.Init(r.Context(), email, limit, sortBy)
+	sortBy := r.URL.Query().Get("sort-by")
+	session, err := h.service.Start(r.Context(), email, sessionID, limit, sortBy)
 	if err != nil {
-		slog.Error("error occurred while creating hoyolab scrape session", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		switch {
+		case errors.Is(err, ErrSessionNotFound):
+			http.Error(w, "scrape session not found", http.StatusNotFound)
+		case errors.Is(err, ErrSessionForbidden):
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		case errors.Is(err, ErrSessionStarted):
+			http.Error(w, "scrape session has already started", http.StatusConflict)
+		default:
+			slog.Error("error occurred while starting hoyolab scrape session", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 
-	slog.Debug("session info", "data", session)
-
-	httputil.Write(w, http.StatusOK, session)
-}
-
-// @Summary  Scrape HoyoLab data
-// @Tags     hylscraper
-// @Produce  json
-// @Success  200 {object} map[string]interface{}
-// @Failure  500 {object} map[string]string
-// @Router   /api/v3/hylscraper [get]
-func (h *handler) Scrape(w http.ResponseWriter, r *http.Request) {
-	// id, ok := httputil.ParseID(w, r, "id")
-	//
-	//	if !ok {
-	//		http.Error(w, "invalid id", http.StatusBadRequest)
-	//		return
-	//	}
-	//
-	// limitStr := r.URL.Query().Get("limit")
-	//
-	//	if limitStr == "" {
-	//		http.Error(w, "limit param is null", http.StatusBadRequest)
-	//		return
-	//	}
-	//
-	// limit, err := strconv.Atoi(limitStr)
-	//
-	//	if err != nil {
-	//		http.Error(w, err.Error(), http.StatusBadRequest)
-	//		return
-	//	}
-	//
-	// upperLim := 5000
-	//
-	//	if limit > upperLim || limit <= 0 {
-	//		http.Error(w, fmt.Sprintf("1 <= limit <= %d", upperLim), http.StatusBadRequest)
-	//		return
-	//	}
-	//
-	// results, err := h.service.Scrape(id, limit)
-	//
-	//	if err != nil {
-	//		http.Error(w, err.Error(), http.StatusInternalServerError)
-	//		return
-	//	}
-	//
-	// w.Header().Set("Content-Type", "text/event-stream")
-	// w.Header().Set("Cache-Control", "no-cache")
-	// w.Header().Set("Connection", "keep-alive")
-	// w.Header().Set("X-Accel-Buffering", "no")
-	//
-	// flusher, ok := w.(http.Flusher)
-	//
-	//	if !ok {
-	//		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
-	//		return
-	//	}
-	//
-	// w.WriteHeader(http.StatusOK)
-	// fmt.Fprintf(w, "data: {\"message\":\"Scrape job started in the background\"}\n\n")
-	// flusher.Flush()
-	//
-	//	for link := range results {
-	//		select {
-	//		case <-r.Context().Done():
-	//			// Client disconnected, but scrape continues in background
-	//			return
-	//		default:
-	//			jsonData, err := json.Marshal(link)
-	//			if err != nil {
-	//				slog.Error("error while parsing ScrapeResult", "err", err)
-	//				continue
-	//			}
-	//			fmt.Fprintf(w, "data: %s\n\n", string(jsonData))
-	//			flusher.Flush()
-	//		}
-	//	}
-	//
-	// fmt.Fprintf(w, "event: done\ndata: {}\n\n")
-	// flusher.Flush()
+	httputil.Write(w, http.StatusAccepted, session)
 }
 
 func (h *handler) StreamUpdates(w http.ResponseWriter, r *http.Request) {
@@ -179,10 +132,19 @@ func (h *handler) StreamUpdates(w http.ResponseWriter, r *http.Request) {
 	slog.Info("streaming scrape session posts and comments", "id", sessionId, "email", email)
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute*120)
 	defer cancel()
-	err = h.service.Subscribe(ctx, sessionId, func(payload []byte) {
-		fmt.Fprintf(w, "data: %s\n\n", payload)
-		flusher.Flush()
-	})
+	err = h.service.Subscribe(
+		ctx,
+		email,
+		sessionId,
+		func() {
+			fmt.Fprintf(w, "event: ready\ndata: {\"session_id\":%d}\n\n", sessionId)
+			flusher.Flush()
+		},
+		func(payload []byte) {
+			fmt.Fprintf(w, "data: %s\n\n", payload)
+			flusher.Flush()
+		},
+	)
 	if err != nil && ctx.Err() == nil {
 		slog.Error("subscribe error", "err", err)
 	}

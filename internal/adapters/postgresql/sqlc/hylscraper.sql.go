@@ -169,6 +169,36 @@ func (q *Queries) AddScrapeErrorById(ctx context.Context, arg AddScrapeErrorById
 	return i, err
 }
 
+const claimHylScrapeSession = `-- name: ClaimHylScrapeSession :one
+UPDATE hyl_scrape_session
+SET scrape_begin = NOW()
+WHERE id = $1
+  AND created_by_email = $2
+  AND scrape_begin IS NULL
+RETURNING id, created_by_email, description, created_at, updated_at, errors, scrape_begin, scrape_end
+`
+
+type ClaimHylScrapeSessionParams struct {
+	ID             int64  `json:"id"`
+	CreatedByEmail string `json:"created_by_email"`
+}
+
+func (q *Queries) ClaimHylScrapeSession(ctx context.Context, arg ClaimHylScrapeSessionParams) (HylScrapeSession, error) {
+	row := q.db.QueryRow(ctx, claimHylScrapeSession, arg.ID, arg.CreatedByEmail)
+	var i HylScrapeSession
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedByEmail,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Errors,
+		&i.ScrapeBegin,
+		&i.ScrapeEnd,
+	)
+	return i, err
+}
+
 const createHylScrapeSession = `-- name: CreateHylScrapeSession :one
 INSERT INTO hyl_scrape_session (created_by_email)
     VALUES ($1) RETURNING id, created_by_email, description, created_at, updated_at, errors, scrape_begin, scrape_end

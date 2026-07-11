@@ -68,8 +68,8 @@ func (s ScrapeData) MarshalJSON() ([]byte, error) {
 }
 
 type NotifyPayload struct {
-	SessionID   int64             `json:"session_id"`
-	PayloadType DataType          `json:"payload_type"`
-	Post        *repo.HylPost     `json:"post,omitempty"`
-	Comments    []repo.HylComment `json:"comments,omitempty"`
+	SessionID   int64            `json:"session_id"`
+	PayloadType DataType         `json:"payload_type"`
+	Post        *repo.HylPost    `json:"post,omitempty"`
+	Comment     *repo.HylComment `json:"comment,omitempty"`
 }

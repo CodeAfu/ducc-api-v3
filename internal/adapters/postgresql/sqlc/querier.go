@@ -16,6 +16,7 @@ type Querier interface {
 	AddHylComments(ctx context.Context, arg AddHylCommentsParams) ([]HylComment, error)
 	AddHylPost(ctx context.Context, arg AddHylPostParams) (HylPost, error)
 	AddScrapeErrorById(ctx context.Context, arg AddScrapeErrorByIdParams) (HylScrapeSession, error)
+	ClaimHylScrapeSession(ctx context.Context, arg ClaimHylScrapeSessionParams) (HylScrapeSession, error)
 	CreateBingo(ctx context.Context, arg CreateBingoParams) (Bingo, error)
 	CreateGenshinChar(ctx context.Context, arg CreateGenshinCharParams) (CreateGenshinCharRow, error)
 	CreateGenshinProfile(ctx context.Context, arg CreateGenshinProfileParams) (GenshinProfile, error)

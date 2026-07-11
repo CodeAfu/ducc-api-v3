@@ -145,6 +145,10 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, fmt.Errorf("GOOSE_DBSTRING: %w", err)
 	}
+	// Neon's pooler URL contains "-pooler" in the hostname.
+	// Strip it to produce the direct connection URL needed for LISTEN/NOTIFY,
+	// which does not work through PgBouncer.
+	directDSN := strings.ReplaceAll(dsn, "-pooler.", ".")
 
 	clerkKey, err := envutils.GetString("CLERK_SECRET_KEY")
 	if err != nil {
@@ -171,7 +175,10 @@ func loadConfig() (config, error) {
 		env:                envVar,
 		addr:               ":" + port,
 		internalToken:      internalToken,
-		db:                 dbConfig{dsn: dsn},
+		db: dbConfig{
+			dsn:       dsn,
+			directDSN: directDSN,
+		},
 		clerk:              clerkConfig{key: clerkKey},
 		corsOrigins:        strings.Split(corsOrigins, ","),
 		awsAccessKeyId:     awsAccessKeyId,

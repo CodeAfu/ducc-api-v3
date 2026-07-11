@@ -8,6 +8,14 @@ SELECT * FROM hyl_scrape_session WHERE created_by_email = $1;
 -- name: GetHylScrapeSessionById :one
 SELECT * FROM hyl_scrape_session WHERE id = $1;
 
+-- name: ClaimHylScrapeSession :one
+UPDATE hyl_scrape_session
+SET scrape_begin = NOW()
+WHERE id = $1
+  AND created_by_email = $2
+  AND scrape_begin IS NULL
+RETURNING *;
+
 -- name: AddScrapeErrorById :one
 UPDATE hyl_scrape_session
 SET errors = COALESCE(errors, '{}'::TEXT[]) || $2::TEXT[]

@@ -98,14 +98,14 @@ func (app *application) mount() http.Handler {
 	})
 
 	// HoyoLab Scraper
-	hylscraperService := hylscraper.NewService(repo.New(app.db), app.db, !isDev)
+	hylscraperService := hylscraper.NewService(repo.New(app.db), app.db, !isDev, app.config.db.directDSN)
 	hylscraperHandler := hylscraper.NewHandler(hylscraperService, isDev)
 	r.Group(func(r chi.Router) {
 		// r.Use(app.onlyAllowedOrigins)
 		r.Use(app.useClerkAuthorization)
-		r.Post("/api/v3/hylscraper/scrape", hylscraperHandler.Init)
-		// r.Get("/api/v3/hylscraper/scrape", hylscraperHandler.Scrape)
+		r.Post("/api/v3/hylscraper/scrape", hylscraperHandler.Create)
 		r.Get("/api/v3/hylscraper/{id}/subscribe", hylscraperHandler.StreamUpdates)
+		r.Post("/api/v3/hylscraper/{id}/start", hylscraperHandler.Start)
 	})
 
 	// Reddit Scraper
@@ -231,7 +231,8 @@ type application struct {
 }
 
 type dbConfig struct {
-	dsn string
+	dsn       string
+	directDSN string // non-pooled URL for LISTEN/NOTIFY
 }
 
 type config struct {
