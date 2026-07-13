@@ -151,5 +151,7 @@ func (h *handler) StreamUpdates(w http.ResponseWriter, r *http.Request) {
 	if ctx.Err() != nil {
 		slog.Error("context error (timeout or cancelled by user)", "err", err)
 	}
+	fmt.Fprintf(w, "event: done\ndata: {\"session_id\":%d\n\n}", sessionId)
+	flusher.Flush()
 	flusher.Flush()
 }
