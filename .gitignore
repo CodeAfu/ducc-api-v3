@@ -5,3 +5,7 @@ tmp/
 .env.*
 .venv/
 scripts/.venv
+.zed
+.zed/
+.zed*
+.zed/*
