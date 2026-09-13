@@ -41,7 +41,7 @@ func (app *application) mount() http.Handler {
 	r.Use(slogLogger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.StripSlashes)
-	r.Use(clerkhttp.WithHeaderAuthorization())
+	// r.Use(clerkhttp.WithHeaderAuthorization())
 	r.Use(func(next http.Handler) http.Handler {
 		limiter := httprate.NewRateLimiter(300, 1*time.Minute)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +119,7 @@ func (app *application) mount() http.Handler {
 	r.Group(func(r chi.Router) {
 		// r.Use(app.useClerkAuthorization)
 		r.Use(middleware.Timeout(60 * time.Second))
+		r.Use(clerkhttp.RequireHeaderAuthorization())
 		r.Get("/api/v3/genshin/characters", genshinHandler.GetAllChars)
 		r.Get("/api/v3/genshin/characters/{id}", genshinHandler.GetGenshinChar)
 		r.Get("/api/v3/genshin/elements", genshinHandler.GetAllElements)
@@ -149,7 +150,8 @@ func (app *application) mount() http.Handler {
 	agreeService := agreegen.NewService(repo.New(app.db), app.db, app.s3Client, app.config.env == "development")
 	agreeHandler := agreegen.NewHandler(agreeService)
 	r.Group(func(r chi.Router) {
-		r.Use(app.useClerkAuthorization)
+		// r.Use(app.useClerkAuthorization)
+		r.Use(clerkhttp.RequireHeaderAuthorization())
 		// r.Use(app.onlyAllowedOrigins)
 		r.Post("/api/v3/agreement-generator/preview", agreeHandler.PreviewDocument)
 		r.Post("/api/v3/agreement-generator/download", agreeHandler.DownloadDocument)
@@ -177,7 +179,7 @@ func (app *application) onlyAllowedOrigins(next http.Handler) http.Handler {
 }
 
 func (app *application) useClerkAuthorization(next http.Handler) http.Handler {
-	if app.config.env == "devleopment" {
+	if app.config.env == "development" {
 		return next
 	}
 	return clerkhttp.RequireHeaderAuthorization()(next)

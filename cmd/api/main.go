@@ -115,36 +115,43 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, fmt.Errorf("INTERNAL_TOKEN: %w", err)
 	}
+	slog.Debug("env", "INTERNAL_TOKEN", internalToken)
 
 	awsAccessKeyId, err := envutils.GetString("AWS_ACCESS_KEY_ID")
 	if err != nil {
 		return config{}, fmt.Errorf("AWS_ACCESS_KEY_ID: %w", err)
 	}
+	slog.Debug("env", "AWS_ACCESS_KEY_ID", awsAccessKeyId)
 
 	awsSecretAccessKey, err := envutils.GetString("AWS_SECRET_ACCESS_KEY")
 	if err != nil {
 		return config{}, fmt.Errorf("AWS_SECRET_ACCESS_KEY: %w", err)
 	}
+	slog.Debug("env", "AWS_SECRET_ACCESS_KEY", awsSecretAccessKey);
 
 	awsRegion, err := envutils.GetString("AWS_REGION")
 	if err != nil {
 		return config{}, fmt.Errorf("AWS_REGION: %w", err)
 	}
+	slog.Debug("env", "AWS_REGION", awsRegion)
 
 	s3BucketName, err := envutils.GetString("S3_BUCKET_NAME")
 	if err != nil {
 		return config{}, fmt.Errorf("S3_BUCKET_NAME: %w", err)
 	}
+	slog.Debug("env", "S3_BUCKET_NAME", s3BucketName)
 
 	envVar, err := envutils.GetString("ENV")
 	if err != nil {
 		return config{}, fmt.Errorf("ENV: %w", err)
 	}
+	slog.Debug("env", "ENV", envVar)
 
 	dsn, err := envutils.GetString("GOOSE_DBSTRING")
 	if err != nil {
 		return config{}, fmt.Errorf("GOOSE_DBSTRING: %w", err)
 	}
+	slog.Debug("env", "GOOSE_DBSTRING", dsn)
 	// Neon's pooler URL contains "-pooler" in the hostname.
 	// Strip it to produce the direct connection URL needed for LISTEN/NOTIFY,
 	// which does not work through PgBouncer.
@@ -154,16 +161,19 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, fmt.Errorf("CLERK_SECRET_KEY: %w", err)
 	}
+	slog.Debug("env", "CLERK_SECRET_KEY", clerkKey)
 
 	corsOrigins, err := envutils.GetString("CORS_ORIGINS")
 	if err != nil {
 		return config{}, fmt.Errorf("CORS_ORIGINS: %w", err)
 	}
+	slog.Debug("env", "CORS_ORIGINS", corsOrigins)
 
 	port, err := envutils.GetString("PORT")
 	if err != nil {
 		return config{}, fmt.Errorf("PORT: %w", err)
 	}
+	slog.Debug("env", "PORT", port)
 
 	// Validate port
 	p, err := strconv.Atoi(port)
